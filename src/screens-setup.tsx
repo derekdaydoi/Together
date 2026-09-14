@@ -1,0 +1,35 @@
+import { useRef, useState } from 'react'
+import { ArrowRight, CalendarDays, Camera, ChevronRight, Copy, Heart, Link2, Plus, UsersRound, Zap } from 'lucide-react'
+import type { CommonProps } from './appTypes'
+import { Avatar, BrandMark, Field, Page, TopBack } from './UI'
+import { blobToDataUrl, compressAvatar } from './lib/image'
+import { isSupabaseConfigured, supabase } from './lib/supabase'
+import { createRemoteCouple, joinRemoteCouple, loadRemoteState, saveRemoteProfile } from './lib/remoteStore'
+
+export function Onboarding({ onStart }: { onStart: () => void }) {
+  return <div className="onboarding-screen">
+    <div className="onboarding-art" aria-hidden><div className="big-heart heart-a"/><div className="big-heart heart-b"/><div className="orbit orbit-a"/><div className="orbit orbit-b"/><div className="tiny-note note-one">better together</div><div className="tiny-note note-two">every day ♡</div></div>
+    <div className="onboarding-copy"><BrandMark/><h1>Hai cuộc sống khác nhau.<br/>Một nhịp chung.</h1><p>Together không ép hai người dính lấy nhau. Nó giúp cả hai nhìn thấy lịch làm việc, năng lượng và nhu cầu gần gũi — rồi tìm ra khoảng thời gian thật sự phù hợp.</p></div>
+    <div className="feature-grid"><Feature icon={CalendarDays} title="Quản lý workdate" text="Biết lúc nào thật sự rảnh" tone="mint"/><Feature icon={Zap} title="Theo dõi năng lượng" text="Đỡ lên plan sai thời điểm" tone="peach"/><Feature icon={Heart} title="Hiểu nhu cầu gần gũi" text="Không ai phải đoán ý ai" tone="rose"/><Feature icon={UsersRound} title="Lên kế hoạch chung" text="Soft plan hoặc hard plan" tone="lilac"/></div>
+    <button className="primary-button onboarding-button" onClick={onStart}>Bắt đầu <ArrowRight size={18}/></button><p className="small-note center">Bận rộn hơn, nhưng vẫn gần nhau hơn mỗi ngày.</p>
+  </div>
+}
+function Feature({ icon: Icon, title, text, tone }: { icon: typeof Heart; title: string; text: string; tone: string }) { return <div className={`feature-card ${tone}`}><span className="feature-icon"><Icon size={20}/></span><strong>{title}</strong><small>{text}</small></div> }
+
+export function ProfileSetup({ state, updateState, onContinue, notify }: CommonProps & { onContinue: () => void }) {
+  const [name,setName]=useState(state.me.displayName==='Bạn'?'':state.me.displayName); const fileRef=useRef<HTMLInputElement>(null); const [busy,setBusy]=useState(false)
+  const pickAvatar=async(file?:File)=>{ if(!file)return; setBusy(true); try{ const blob=await compressAvatar(file); let avatarUrl=await blobToDataUrl(blob); let avatarPath:string|undefined
+    if(supabase){ const {data:userData}=await supabase.auth.getUser(); const userId=userData.user?.id; if(userId){ avatarPath=`${userId}/avatar-${Date.now()}.webp`; const {error}=await supabase.storage.from('avatars').upload(avatarPath,blob,{contentType:'image/webp',upsert:false}); if(error) throw error; const signed=await supabase.storage.from('avatars').createSignedUrl(avatarPath,3600); avatarUrl=signed.data?.signedUrl??avatarUrl } }
+    updateState(d=>{d.me.avatarUrl=avatarUrl;d.me.avatarPath=avatarPath}); if(supabase) await saveRemoteProfile(name.trim()||state.me.displayName||'Bạn',avatarPath); notify('Ảnh đại diện đã sẵn sàng.')
+  }catch(err){notify(err instanceof Error?err.message:'Không thể xử lý ảnh.','normal')}finally{setBusy(false)}}
+  const next=async()=>{ const nextName=name.trim()||'Bạn'; updateState(d=>{d.me.displayName=nextName}); try{if(supabase)await saveRemoteProfile(nextName,state.me.avatarPath)}catch(error){notify(error instanceof Error?error.message:'Không thể lưu hồ sơ.','normal');return} onContinue() }
+  return <Page className="setup-page"><TopBack title="Hồ sơ của bạn"/><div className="profile-hero"><div className="avatar-picker" onClick={()=>fileRef.current?.click()}><Avatar profile={state.me} size="xl"/><span className="camera-chip"><Camera size={17}/></span></div><input ref={fileRef} hidden type="file" accept="image/*" onChange={e=>pickAvatar(e.target.files?.[0])}/><button className="secondary-button slim" onClick={()=>fileRef.current?.click()}>{busy?'Đang xử lý…':'Tải ảnh lên'}</button><p>Ảnh chỉ dùng trong couple của bạn. Bản production dùng private Storage.</p></div><div className="form-stack"><Field label="Tên hiển thị"><input value={name} onChange={e=>setName(e.target.value)} placeholder="Tên người ấy gọi bạn"/></Field><div className="privacy-note"><Heart size={16}/> Dữ liệu nhạy cảm không dùng để tạo “relationship score”. Together chỉ dùng nó để chọn thời điểm phù hợp.</div></div><button className="primary-button sticky-action" onClick={next}>Tiếp tục</button></Page>
+}
+
+export function Connect({ state, updateState, onDone, notify }: CommonProps & { onDone: () => void }) {
+  const [mode,setMode]=useState<'choose'|'join'>('choose'); const [code,setCode]=useState('')
+  const create=async()=>{try{if(supabase){await createRemoteCouple();const remote=await loadRemoteState();if(remote)updateState(d=>Object.assign(d,remote))}else updateState(d=>{d.inviteCode=`TOG${Math.random().toString(36).slice(2,8).toUpperCase()}`});setMode('join');notify('Đã tạo không gian chung.')}catch(e){notify(e instanceof Error?e.message:'Không thể tạo couple.','normal')}}
+  const join=async()=>{if(code.trim().length<4)return notify('Nhập mã mời hợp lệ.','normal');try{if(supabase){await joinRemoteCouple(code.trim().toUpperCase());const remote=await loadRemoteState();if(remote)updateState(d=>Object.assign(d,remote))}notify('Đã kết nối với couple.');onDone()}catch(e){notify(e instanceof Error?e.message:'Không thể tham gia couple.','normal')}}
+  const copy=async()=>{await navigator.clipboard?.writeText(state.inviteCode);notify('Đã copy mã mời.')}
+  return <Page className="connect-page"><TopBack title="Kết nối cùng nhau"/><div className="center-heading"><span className="eyebrow">Bắt đầu một nhịp chung</span><h2>Hai người, một không gian riêng.</h2><p>Không có feed. Không public. Chỉ hai người.</p></div>{mode==='choose'?<div className="choice-stack"><button className="choice-card rose" onClick={create}><span className="round-icon"><Plus/></span><div><strong>Tạo couple mới</strong><small>Nhận mã mời để chia sẻ với người yêu</small></div><ChevronRight/></button><button className="choice-card mint" onClick={()=>setMode('join')}><span className="round-icon"><Link2/></span><div><strong>Tham gia bằng mã</strong><small>Nhập mã người yêu gửi cho bạn</small></div><ChevronRight/></button></div>:<div className="invite-card"><Heart size={28}/><span className="eyebrow">Mã couple</span><strong className="invite-code">{state.inviteCode}</strong><button className="secondary-button" onClick={copy}><Copy size={16}/> Copy mã</button><div className="divider"><span>hoặc nhập mã khác</span></div><input value={code} onChange={e=>setCode(e.target.value.toUpperCase())} placeholder="VD: TOGABC12"/><button className="primary-button" onClick={join}>Tham gia couple</button>{!isSupabaseConfigured&&<button className="text-button" onClick={onDone}>Tiếp tục bản demo</button>}</div>}<div className="line-art">two different lives · one beautiful rhythm ♡</div></Page>
+}
