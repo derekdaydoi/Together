@@ -4,6 +4,7 @@
 
 Together là một private web app/PWA cho hai người trong một mối quan hệ cùng nhìn thấy **workdate, availability, mức năng lượng và nhu cầu closeness**, sau đó biến những tín hiệu đó thành khoảng thời gian phù hợp để ở bên nhau.
 
+
 ## Câu chuyện sản phẩm
 
 Calendar truyền thống trả lời: **“Khi nào tôi rảnh?”**  
@@ -109,7 +110,16 @@ Sau đó apply `supabase/schema.sql`, deploy Edge Function `join-couple`, rồi 
 
 Workflow `.github/workflows/deploy-pages.yml` build và deploy lên GitHub Pages mỗi khi push `main`.
 
-Supabase URL và publishable key là client-side config; workflow hiện đọc chúng từ GitHub Actions secrets nếu được cấu hình. Nếu chưa có, build vẫn chạy Demo Mode.
+Production hiện trỏ trực tiếp tới project Supabase `Together` qua `.env.production`. **Publishable key là public client key theo thiết kế của Supabase**; tuyệt đối không commit `service_role`.
+
+Hai cài đặt platform cần làm **một lần** vì connector không có quyền thay đổi account-level settings:
+
+1. GitHub → **Settings → Pages → Source: GitHub Actions**. Workflow đã sẵn sàng; trước khi bật Pages, build vẫn được verify và deploy step được phép fail mềm.
+2. Supabase → **Authentication → URL Configuration**:
+   - Site URL: `https://derekdaydoi.github.io/Together/`
+   - Redirect URL: `https://derekdaydoi.github.io/Together/`
+
+Sau hai bước này, push `main` sẽ deploy app thật và Magic Link sẽ quay về đúng PWA.
 
 ## Product boundaries — V1
 
@@ -118,3 +128,15 @@ Supabase URL và publishable key là client-side config; workflow hiện đọc 
 **Chưa có:** relationship score, streak, diary, location tracking, chat, AI therapy, Google Calendar import.
 
 Google Calendar nên là V1.5 sau khi core behavior chứng minh được giá trị.
+
+
+## Production backend hiện tại
+
+- Project: `Together`
+- Region: Singapore (`ap-southeast-1`)
+- Project ref: `jirbjekrevydrqytvfee`
+- Edge Function: `join-couple` (JWT required)
+- Storage: private bucket `avatars`, image-only, max 2 MB
+- Security Advisor: clean tại thời điểm provisioning
+
+Backend được provision từ schema trong repo; migration history nằm trên Supabase project.
