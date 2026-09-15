@@ -1,5 +1,5 @@
 import type { CoupleState } from './types'
-export type View = 'onboarding'|'profile'|'connect'|'today'|'week'|'plans'|'us'|'daily'|'work'|'availability'|'plan'|'plan-detail'|'checkin'
+export type View = 'onboarding'|'login'|'profile'|'connect'|'today'|'week'|'plans'|'us'|'daily'|'work'|'availability'|'plan'|'plan-detail'|'checkin'
 export type Tone = 'normal'|'success'
 export type CommonProps = {
   state: CoupleState
