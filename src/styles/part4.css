@@ -10,11 +10,14 @@ blockquote { margin: 15px 0; padding: 14px 16px; background: #f7e3e1; border-rad
 .detail-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 9px; margin-top: 18px; }.danger-outline { color: #b96868; border-color: #e5b8b8; }
 
 @media (max-width: 560px) {
-  html, body, #root { min-height: 100%; background: #fffaf6; }
-  body { min-height: 100dvh; background: #fffaf6; }
-  .app-shell { padding: 0; min-height: 100dvh; background: #fffaf6; }
-  .app-shell::before { content: ''; position: fixed; inset: 0 0 auto; height: calc(env(safe-area-inset-top, 0px) + 24px); z-index: 40; pointer-events: none; background: linear-gradient(180deg, rgba(255,250,246,0) 0%, rgba(255,250,246,.5) 58%, #fffaf6 100%); }
-  .phone-canvas { width: 100%; min-height: 100vh; min-height: 100dvh; border: 0; border-radius: 0; box-shadow: none; background: transparent; }
+  html, body, #root { width: 100%; max-width: 100%; min-height: 100%; overflow-x: hidden; overscroll-behavior-x: none; background: #fffaf6; }
+  body { min-height: 100dvh; background: #fffaf6; touch-action: pan-y; }
+  input, textarea, select { font-size: 16px; }
+  .app-shell { width: 100%; max-width: 100svw; padding: 0; min-height: 100dvh; overflow-x: hidden; overscroll-behavior-x: none; touch-action: pan-y; background: #fffaf6; }
+  .app-shell::before { content: ''; position: fixed; inset: 0 0 auto; height: calc(env(safe-area-inset-top, 0px) + 42px); z-index: 40; pointer-events: none; border: 0; background: linear-gradient(180deg, rgba(255,250,246,1) 0%, rgba(255,250,246,.94) 32%, rgba(255,250,246,.64) 62%, rgba(255,250,246,.22) 82%, rgba(255,250,246,0) 100%); -webkit-backdrop-filter: blur(2px); backdrop-filter: blur(2px); }
+  .app-shell::after { content: ''; position: fixed; inset: auto 0 0; height: calc(env(safe-area-inset-bottom, 0px) + 46px); z-index: 18; pointer-events: none; border: 0; background: linear-gradient(0deg, rgba(255,250,246,.98) 0%, rgba(255,250,246,.82) 35%, rgba(255,250,246,.42) 68%, rgba(255,250,246,0) 100%); -webkit-backdrop-filter: blur(1.5px); backdrop-filter: blur(1.5px); }
+  .phone-canvas { width: 100%; max-width: 100svw; min-height: 100vh; min-height: 100dvh; border: 0; border-radius: 0; box-shadow: none; overflow-x: hidden; background: transparent; }
+  .page, .onboarding-screen, .auth-page, .setup-page, .connect-page, .form-page, .detail-page { max-width: 100%; overflow-x: hidden; }
   .page { min-height: 100vh; min-height: 100dvh; padding-top: calc(24px + env(safe-area-inset-top, 0px)); padding-bottom: calc(32px + env(safe-area-inset-bottom, 0px)); }
   .page.with-nav { padding-bottom: calc(105px + env(safe-area-inset-bottom, 0px)); }
   .onboarding-screen { min-height: 100vh; min-height: 100dvh; padding-top: calc(66px + env(safe-area-inset-top, 0px)); padding-bottom: calc(24px + env(safe-area-inset-bottom, 0px)); }
