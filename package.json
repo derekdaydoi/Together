@@ -4,7 +4,9 @@
   "version": "1.0.0",
   "type": "module",
   "scripts": {
+    "predev": "node scripts/prepare-index.mjs",
     "dev": "vite",
+    "prebuild": "node scripts/prepare-index.mjs",
     "build": "tsc -b && vite build",
     "preview": "vite preview"
   },
