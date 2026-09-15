@@ -13,6 +13,15 @@ class AppErrorBoundary extends Component<{children:ReactNode},{failed:boolean}> 
   }
 }
 
+// Together behaves as an app surface: vertical scrolling stays enabled, while
+// pinch/multi-touch zoom is blocked to avoid iOS PWA viewport drifting sideways.
+const preventGesture=(event:Event)=>event.preventDefault()
+const preventMultiTouch=(event:TouchEvent)=>{if(event.touches.length>1)event.preventDefault()}
+document.addEventListener('gesturestart',preventGesture,{passive:false})
+document.addEventListener('gesturechange',preventGesture,{passive:false})
+document.addEventListener('gestureend',preventGesture,{passive:false})
+document.addEventListener('touchmove',preventMultiTouch,{passive:false})
+
 const root=document.getElementById('root')
 if(!root)throw new Error('Missing #root mount node')
 
