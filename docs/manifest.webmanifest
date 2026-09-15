@@ -1,11 +1,13 @@
 {
+  "id": "/Together/",
   "name": "Together",
   "short_name": "Together",
   "start_url": "/Together/",
   "scope": "/Together/",
   "display": "standalone",
-  "background_color": "#f7f0e9",
-  "theme_color": "#f7f0e9",
+  "orientation": "portrait-primary",
+  "background_color": "#fffaf6",
+  "theme_color": "#fffaf6",
   "icons": [
     {"src":"/Together/icon.svg","sizes":"any","type":"image/svg+xml","purpose":"any maskable"}
   ]
