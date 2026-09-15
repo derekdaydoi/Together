@@ -79,6 +79,7 @@ export default function App(){
   const notify=(message:string,tone:Tone='success')=>setToast({message,tone})
   const finishOnboarding=()=>{localStorage.setItem('together-onboarded','1');setView(isSupabaseConfigured?'login':'profile')}
   const backToOnboarding=()=>{localStorage.removeItem('together-onboarded');setAuthSent(false);setAuthError(null);setView('onboarding')}
+  const backToLogin=async()=>{setAuthSent(false);setAuthError(null);if(supabase)await supabase.auth.signOut();setSessionReady(false);setSessionChecked(true);setView('login')}
   const sendMagicLink=async()=>{
     if(!supabase||!authEmail.trim())return
     setAuthError(null)
@@ -97,7 +98,7 @@ export default function App(){
   const common={state,updateState,open,notify}
   const minimal=['login','profile','connect','daily','work','availability','plan','plan-detail','checkin'].includes(view)
   return <Shell minimal={minimal}>
-    {view==='profile'&&<ProfileSetup {...common} onBack={()=>setView('login')} onContinue={()=>setView('connect')}/>} 
+    {view==='profile'&&<ProfileSetup {...common} onBack={backToLogin} onContinue={()=>setView('connect')}/>} 
     {view==='connect'&&<Connect {...common} onBack={()=>setView('profile')} onDone={()=>setView('today')}/>} 
     {view==='today'&&<Today {...common}/>} 
     {view==='week'&&<Week {...common}/>} 
