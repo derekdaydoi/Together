@@ -10,9 +10,15 @@ blockquote { margin: 15px 0; padding: 14px 16px; background: #f7e3e1; border-rad
 .detail-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 9px; margin-top: 18px; }.danger-outline { color: #b96868; border-color: #e5b8b8; }
 
 @media (max-width: 560px) {
-  .app-shell { padding: 0; }
-  .phone-canvas { width: 100%; min-height: 100vh; border: 0; border-radius: 0; box-shadow: none; }
-  .page, .onboarding-screen, .auth-page { min-height: 100vh; }
+  html, body, #root { min-height: 100%; background: #fffaf6; }
+  body { min-height: 100dvh; background: #fffaf6; }
+  .app-shell { padding: 0; min-height: 100dvh; background: #fffaf6; }
+  .app-shell::before { content: ''; position: fixed; inset: 0 0 auto; height: calc(env(safe-area-inset-top, 0px) + 24px); z-index: 40; pointer-events: none; background: linear-gradient(180deg, rgba(255,250,246,0) 0%, rgba(255,250,246,.5) 58%, #fffaf6 100%); }
+  .phone-canvas { width: 100%; min-height: 100vh; min-height: 100dvh; border: 0; border-radius: 0; box-shadow: none; background: transparent; }
+  .page { min-height: 100vh; min-height: 100dvh; padding-top: calc(24px + env(safe-area-inset-top, 0px)); padding-bottom: calc(32px + env(safe-area-inset-bottom, 0px)); }
+  .page.with-nav { padding-bottom: calc(105px + env(safe-area-inset-bottom, 0px)); }
+  .onboarding-screen { min-height: 100vh; min-height: 100dvh; padding-top: calc(66px + env(safe-area-inset-top, 0px)); padding-bottom: calc(24px + env(safe-area-inset-bottom, 0px)); }
+  .auth-page { min-height: 100vh; min-height: 100dvh; padding-top: calc(24px + env(safe-area-inset-top, 0px)); padding-bottom: calc(28px + env(safe-area-inset-bottom, 0px)); }
   .bottom-nav { position: fixed; left: 12px; right: 12px; bottom: max(10px, env(safe-area-inset-bottom)); }
   .toast { position: fixed; bottom: calc(92px + env(safe-area-inset-bottom)); }
 }
