@@ -1,4 +1,4 @@
-name: Verify and Deploy GitHub Pages
+name: Build and Publish Together
 
 on:
   push:
@@ -6,41 +6,68 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: read
+  contents: write
   pages: write
   id-token: write
 
 concurrency:
-  group: pages
+  group: together-production
   cancel-in-progress: true
 
+env:
+  VITE_SUPABASE_URL: https://jirbjekrevydrqytvfee.supabase.co
+  VITE_SUPABASE_PUBLISHABLE_KEY: sb_publishable_OPr4RWRxVhw67bxf3sjp7A_oL7zAqKD
+
 jobs:
-  build:
+  build-and-publish:
+    if: github.actor != 'github-actions[bot]'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
       - uses: actions/setup-node@v4
         with:
           node-version: 22
           cache: npm
-      - run: npm ci --ignore-scripts --no-audit --no-fund
-      - run: npm run build
-      - name: Configure Pages
-        id: pages
-        continue-on-error: true
-        uses: actions/configure-pages@v5
-      - uses: actions/upload-pages-artifact@v3
+      - name: Install dependencies
+        run: npm ci --ignore-scripts --no-audit --no-fund
+      - name: Typecheck and build production app
+        run: npm run build
+      - name: Upload Pages artifact
+        uses: actions/upload-pages-artifact@v3
         with:
           path: ./dist
+      - name: Publish compiled app into main/root and main/docs
+        run: |
+          rm -rf assets docs
+          cp -R dist/assets ./assets
+          cp dist/index.html ./index.html
+          cp dist/icon.svg ./icon.svg
+          cp dist/manifest.webmanifest ./manifest.webmanifest
+          touch .nojekyll
+          mkdir -p docs
+          cp -R dist/* docs/
+          touch docs/.nojekyll
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A index.html assets icon.svg manifest.webmanifest .nojekyll docs
+          if git diff --cached --quiet; then
+            echo "Compiled web output already current."
+          else
+            git commit -m "chore: publish Together web build [skip ci]"
+            git push origin HEAD:main
+          fi
 
-  deploy:
+  deploy-pages-actions:
+    if: github.actor != 'github-actions[bot]'
+    needs: build-and-publish
     runs-on: ubuntu-latest
-    needs: build
     continue-on-error: true
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
     steps:
-      - name: Deploy to GitHub Pages
+      - name: Deploy when repository uses GitHub Actions Pages
         id: deployment
         uses: actions/deploy-pages@v4
