@@ -32,6 +32,16 @@ jobs:
           cache: npm
       - name: Install dependencies
         run: npm ci --ignore-scripts --no-audit --no-fund
+      - name: Run scheduling regression tests
+        run: npm run test:logic
+      - name: Validate email authentication behavior
+        run: npm run test:auth
+      - name: Validate app session and request races
+        run: node scripts/test-app-races.mjs
+      - name: Install isolated PostgreSQL test runtime
+        run: npm install --no-save --ignore-scripts --no-package-lock --no-audit --no-fund @electric-sql/pglite@0.3.14
+      - name: Validate RLS, couple membership and plan lifecycle
+        run: node scripts/test-backend.mjs
       - name: Typecheck and build production app
         run: npm run build
       - name: Upload Pages artifact
@@ -43,15 +53,18 @@ jobs:
           rm -rf assets docs
           cp -R dist/assets ./assets
           cp dist/index.html ./index.html
-          cp dist/icon.svg ./icon.svg
           cp dist/manifest.webmanifest ./manifest.webmanifest
+          for icon in icon.svg favicon.png apple-touch-icon.png icon-192.png icon-512.png icon-192-maskable.png icon-512-maskable.png; do
+            test -f "dist/$icon"
+            cp "dist/$icon" "./$icon"
+          done
           touch .nojekyll
           mkdir -p docs
           cp -R dist/* docs/
           touch docs/.nojekyll
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add -A index.html assets icon.svg manifest.webmanifest .nojekyll docs
+          git add -A index.html assets icon.svg favicon.png apple-touch-icon.png icon-192.png icon-512.png icon-192-maskable.png icon-512-maskable.png manifest.webmanifest .nojekyll docs
           if git diff --cached --quiet; then
             echo "Compiled web output already current."
           else

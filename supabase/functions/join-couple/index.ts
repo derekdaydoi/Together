@@ -16,7 +16,6 @@ Deno.serve(async (req: Request) => {
 
     const url = Deno.env.get('SUPABASE_URL')!
     const anonKey = Deno.env.get('SUPABASE_ANON_KEY')!
-    const serviceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
 
     const userClient = createClient(url, anonKey, { global: { headers: { Authorization: authHeader } } })
     const { data: userData, error: userError } = await userClient.auth.getUser()
@@ -24,22 +23,17 @@ Deno.serve(async (req: Request) => {
 
     const { code } = await req.json()
     const normalized = String(code ?? '').trim().toUpperCase()
-    if (normalized.length < 4 || normalized.length > 20) return json({ ok: false, message: 'Mã mời không hợp lệ.' }, 400)
+    if (!/^[A-F0-9]{10,32}$/.test(normalized)) return json({ ok: false, message: 'Mã mời không hợp lệ.' }, 400)
 
-    const admin = createClient(url, serviceKey, { auth: { persistSession: false, autoRefreshToken: false } })
-    const { data: couple, error: coupleError } = await admin.from('couples').select('id').eq('invite_code', normalized).maybeSingle()
-    if (coupleError) throw coupleError
-    if (!couple) return json({ ok: false, message: 'Không tìm thấy couple với mã này.' }, 404)
-
-    const { count, error: countError } = await admin.from('couple_members').select('*', { count: 'exact', head: true }).eq('couple_id', couple.id)
-    if (countError) throw countError
-    if ((count ?? 0) >= 2) return json({ ok: false, message: 'Couple này đã đủ hai người.' }, 409)
-
-    const { data: existing } = await admin.from('couple_members').select('couple_id').eq('user_id', userData.user.id).maybeSingle()
-    if (existing) return json({ ok: false, message: 'Bạn đã thuộc một couple khác.' }, 409)
-
-    const { error: insertError } = await admin.from('couple_members').insert({ couple_id: couple.id, user_id: userData.user.id, role: 'member' })
-    if (insertError) throw insertError
+    // PostgreSQL performs all checks, insertion and one-time consumption in
+    // a single transaction with a row lock. No service role in this function.
+    const { error: redeemError } = await userClient.rpc('redeem_couple_invite', { p_code: normalized })
+    if (redeemError) {
+      if (['22023', '23505', '28000'].includes(redeemError.code ?? '')) {
+        return json({ ok: false, message: 'Mã đã hết hạn, đã được dùng hoặc tài khoản đã kết nối.' }, 409)
+      }
+      throw redeemError
+    }
 
     return json({ ok: true })
   } catch (error) {

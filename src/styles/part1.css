@@ -23,8 +23,8 @@
 
 * { box-sizing: border-box; }
 html, body, #root { width: 100%; max-width: 100%; overflow-x: hidden; overscroll-behavior-x: none; }
-html { background: #f4ece5; -webkit-text-size-adjust: 100%; text-size-adjust: 100%; touch-action: pan-y; }
-body { margin: 0; min-width: 320px; min-height: 100vh; position: relative; overscroll-behavior-x: none; touch-action: pan-y; background: radial-gradient(circle at 10% 8%, #fbe9e3 0, transparent 30%), radial-gradient(circle at 90% 25%, #eaf0e4 0, transparent 35%), #f4ece5; }
+html { background: #f4ece5; -webkit-text-size-adjust: 100%; text-size-adjust: 100%; touch-action: pan-y pinch-zoom; }
+body { margin: 0; min-width: 320px; min-height: 100vh; position: relative; overscroll-behavior-x: none; touch-action: pan-y pinch-zoom; background: radial-gradient(circle at 10% 8%, #fbe9e3 0, transparent 30%), radial-gradient(circle at 90% 25%, #eaf0e4 0, transparent 35%), #f4ece5; }
 img, svg, canvas { max-width: 100%; }
 button, input, textarea { font: inherit; }
 button { color: inherit; }
@@ -38,7 +38,7 @@ h1, h2, h3, p { margin-top: 0; }
 h1, h2, h3 { letter-spacing: -.035em; }
 p { color: var(--muted); line-height: 1.58; }
 
-.app-shell { width: 100%; max-width: 100vw; min-height: 100vh; position: relative; overflow-x: hidden; overscroll-behavior-x: none; touch-action: pan-y; padding: 26px 16px; }
+.app-shell { width: 100%; max-width: 100vw; min-height: 100vh; position: relative; overflow-x: hidden; overscroll-behavior-x: none; touch-action: pan-y pinch-zoom; padding: 26px 16px; }
 .paper-glow { position: fixed; border-radius: 50%; filter: blur(55px); opacity: .34; pointer-events: none; }
 .paper-glow.one { width: 320px; height: 320px; background: #efd8d0; top: -90px; left: -100px; }
 .paper-glow.two { width: 360px; height: 360px; background: #dfe6d4; right: -130px; bottom: 8%; }

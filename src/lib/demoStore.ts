@@ -1,20 +1,12 @@
 import type { CoupleState, DailyState, WorkSchedule, AvailabilityBlock, SharedPlan, WeeklyCheckin } from '../types'
+import { addDaysISO, localISODate, weekStartISO } from './dates'
 
 const KEY = 'together-demo-state-v1'
 
 const today = new Date()
-const iso = (d: Date) => d.toISOString().slice(0, 10)
-const plusDays = (n: number) => {
-  const d = new Date(today)
-  d.setDate(d.getDate() + n)
-  return iso(d)
-}
-const monday = (() => {
-  const d = new Date(today)
-  const day = d.getDay() || 7
-  d.setDate(d.getDate() - day + 1)
-  return iso(d)
-})()
+const iso = localISODate
+const plusDays = (n: number) => addDaysISO(iso(today), n)
+const monday = weekStartISO(today)
 
 const seed: CoupleState = {
   id: 'demo-couple',
@@ -42,7 +34,7 @@ const seed: CoupleState = {
     { id: 'a6', userId: 'partner', date: plusDays(4), start: '19:00', end: '23:00', status: 'available' },
   ],
   plans: [
-    { id: 'p1', title: 'Đi xem phim', date: plusDays(4), start: '19:30', end: '22:00', type: 'hard', status: 'confirmed', location: 'Rạp gần nhà', note: 'Chọn phim trước tối thứ Sáu nhé.', createdBy: 'me' },
+    { id: 'p1', title: 'Đi xem phim', date: plusDays(4), start: '19:30', end: '22:00', type: 'hard', status: 'confirmed', location: 'Rạp gần nhà', note: 'Chọn phim trước tối thứ Sáu nhé.', createdBy: 'me', revision: 1 },
   ],
   checkins: [
     { userId: 'partner', weekStart: monday, feeling: 2, note: 'Tuần này vừa đủ.' },
@@ -52,7 +44,15 @@ const seed: CoupleState = {
 export function loadDemoState(): CoupleState {
   try {
     const stored = localStorage.getItem(KEY)
-    if (stored) return JSON.parse(stored)
+    if (stored) {
+      const parsed = JSON.parse(stored) as CoupleState
+      // Demo caches created before optimistic concurrency did not store revisions.
+      parsed.plans = (parsed.plans ?? []).map(plan => ({
+        ...plan,
+        revision: Number.isInteger(plan.revision) && plan.revision > 0 ? plan.revision : 1,
+      }))
+      return parsed
+    }
   } catch {
     // Ignore malformed demo cache.
   }

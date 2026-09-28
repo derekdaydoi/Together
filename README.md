@@ -131,6 +131,10 @@ npm install
 npm run dev
 ```
 
+Mặc định mở **http://localhost:3000/**. Trong môi trường dùng pnpm có thể chạy `pnpm dev`.
+Vite sử dụng đường dẫn gốc `/` khi phát triển và `/Together/` khi build cho GitHub Pages;
+không mở thư mục `dist/` trực tiếp dưới `localhost:3000` để thử bản phát triển.
+
 Không cấu hình Supabase thì app chạy **Demo Mode** bằng localStorage để review toàn bộ UX ngay lập tức.
 
 ### Kết nối Supabase
@@ -144,9 +148,25 @@ VITE_SUPABASE_PUBLISHABLE_KEY=sb_publishable_YOUR_KEY
 
 Sau đó apply `supabase/schema.sql` + migrations, deploy Edge Function `join-couple`, rồi chạy lại app.
 
+Nếu cần đăng nhập bằng Magic Link ngay trên máy local, tạo `.env.local` với **publishable**
+URL/key của project (không đưa secret/service-role key vào frontend). Đồng thời thêm
+`http://localhost:3000/` vào **Authentication → URL Configuration → Redirect URLs**
+trên Supabase. Link local sẽ quay về localhost, vì thế máy chạy Vite phải đang bật.
+
 ## Deploy
 
 Workflow `.github/workflows/deploy-pages.yml` typecheck, build Vite production, publish compiled assets và deploy GitHub Pages mỗi khi push `main`.
+
+### Relaunch 2026-09-28: trình tự phát hành
+
+Những thay đổi relaunch đang nằm trên nhánh phát triển; nội dung đang xuất hiện ở trang production có thể chưa bao gồm các sửa lỗi dưới đây. Để tránh làm hỏng ứng dụng cũ, thực hiện đúng trình tự:
+
+1. Áp dụng các migration mới theo thứ tự timestamp trong `supabase/migrations/`. Migration sửa tạo couple và vòng đời kế hoạch, `plans.revision` và cấu hình realtime đều tương thích với client cũ. Giữ trigger bảo vệ hard plan **chưa bật** ở bước này.
+2. Chạy các kiểm thử logic, PostgreSQL cục bộ và build production. Workflow pull request và workflow deploy đều kiểm tra cả ba.
+3. Phát hành frontend mới từ `main` và xác minh phiên bản thực tế đã có luồng hard plan `proposed → confirmed` cùng xử lý xung đột revision.
+4. Chỉ sau đó mới chạy `supabase/post-release/activate_hard_plan_guard.sql`; kiểm tra trigger `plans_guard_hard_confirmation` được bật, rồi chạy acceptance hai tài khoản/hai thiết bị theo `QA-RELAUNCH.md`.
+
+Lưu ý: sửa đồng bộ khi xóa lịch dùng `REPLICA IDENTITY FULL`. Với Supabase Postgres Changes, RLS vẫn chỉ gửi khóa chính cho DELETE, nhưng một client được tùy biến có thể quan sát metadata xóa của các couple khác do DELETE không qua kiểm tra RLS từng hàng. Đây là giới hạn quyền riêng tư cần cân nhắc trước phát hành rộng; nếu phải bảo mật cả UUID/thời điểm xóa thì chuyển sự kiện bảng lịch sang private Realtime Broadcast và loại hai bảng này khỏi publication Postgres Changes.
 
 Production hiện trỏ trực tiếp tới project Supabase `Together` qua `.env.production`. **Publishable key là public client key theo thiết kế của Supabase**; tuyệt đối không commit `service_role`.
 
