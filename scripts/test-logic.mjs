@@ -23,6 +23,18 @@ const { localISODate, weekStartISO, addDaysISO, validTimeRange } = await import(
 const { overlapSuggestion, workOccursOn } = await import(pathToFileURL(join(scratch, 'insights.mjs')).href)
 const { planIdeas } = await import(pathToFileURL(join(scratch, 'planIdeas.mjs')).href)
 
+// Execute the pure response reconciler from the actual TSX module, without
+// importing its browser/UI dependencies or maintaining a duplicate algorithm.
+const planScreenSource = await readFile(new URL('../src/screens-plan.tsx', import.meta.url), 'utf8')
+const planScreenAst = ts.createSourceFile('screens-plan.tsx', planScreenSource, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX)
+const reconciler = planScreenAst.statements.find(node => ts.isFunctionDeclaration(node) && node.name?.text === 'reconcilePlanResponse')
+assert.ok(reconciler, 'Plan UI must expose its production response reconciler')
+const { outputText: reconcilerJS } = ts.transpileModule(reconciler.getText(planScreenAst), {
+  compilerOptions: { module: ts.ModuleKind.ESNext, target: ts.ScriptTarget.ES2022 },
+})
+await writeFile(join(scratch, 'plan-response.mjs'), reconcilerJS)
+const { reconcilePlanResponse } = await import(pathToFileURL(join(scratch, 'plan-response.mjs')).href)
+
 const day = '2026-09-28'
 const available = (userId, start, end, status = 'available', date = day) =>
   ({ id: `${userId}-${start}-${status}`, userId, date, start, end, status })
@@ -111,6 +123,65 @@ test('missing daily states never masquerade as real closeness measurements', () 
   assert.equal(slot.closeness, null)
   assert.equal(slot.energy, null)
   assert.match(planIdeas(withoutCheckins, '2026-10-05').hint, /Chưa có đủ trạng thái/)
+})
+
+const responsePlan = (revision, status = 'proposed', extra = {}) => ({
+  id: 'shared-plan', title: 'Dinner', date: day, start: '19:00', end: '20:00',
+  type: 'hard', createdBy: 'me', revision, status, ...extra,
+})
+
+test('late confirmation cannot undo a cancellation already received through realtime', () => {
+  const current = [responsePlan(3, 'cancelled')]
+  assert.strictEqual(reconcilePlanResponse(current, responsePlan(2, 'confirmed')), current)
+})
+
+test('late cancellation cannot overwrite a newer reopened proposal', () => {
+  const current = [responsePlan(4, 'proposed', { title: 'Rescheduled dinner', start: '20:00' })]
+  assert.strictEqual(reconcilePlanResponse(current, responsePlan(3, 'cancelled')), current)
+})
+
+test('late edit response preserves newer content and partner confirmation', () => {
+  const current = [responsePlan(5, 'confirmed', { title: 'Current title' })]
+  assert.strictEqual(reconcilePlanResponse(current, responsePlan(4, 'proposed', { title: 'Old title' })), current)
+})
+
+test('edit, confirmation and cancellation responses never resurrect a missing plan', () => {
+  const current = [responsePlan(9, 'proposed', { id: 'unrelated-plan' })]
+  for (const status of ['proposed', 'confirmed', 'cancelled']) {
+    assert.strictEqual(reconcilePlanResponse(current, responsePlan(2, status)), current)
+  }
+  // Create insertion is also suppressed if the form already observed the row
+  // before a subsequent realtime snapshot removed it.
+  assert.strictEqual(reconcilePlanResponse(current, responsePlan(1), false), current)
+})
+
+test('create response inserts once and preserves a newer cancelled or confirmed row', () => {
+  const created = responsePlan(1)
+  const inserted = reconcilePlanResponse([], created, true)
+  assert.deepEqual(inserted, [created])
+  assert.strictEqual(reconcilePlanResponse(inserted, created, true), inserted)
+  for (const status of ['cancelled', 'confirmed']) {
+    const realtime = [responsePlan(2, status)]
+    assert.strictEqual(reconcilePlanResponse(realtime, created, true), realtime)
+  }
+})
+
+test('fresh mutation applies its complete version without mutating prior state', () => {
+  const old = Object.freeze(responsePlan(1))
+  const other = Object.freeze(responsePlan(7, 'proposed', { id: 'other' }))
+  const plans = Object.freeze([old, other])
+  const fresh = responsePlan(2, 'proposed', { title: 'Edited title', note: 'Edited note' })
+  assert.deepEqual(reconcilePlanResponse(plans, fresh), [fresh, other])
+  assert.equal(plans[0].revision, 1)
+  const confirmed = responsePlan(3, 'confirmed')
+  assert.deepEqual(reconcilePlanResponse([fresh], confirmed), [confirmed])
+  const cancelled = responsePlan(4, 'cancelled')
+  assert.deepEqual(reconcilePlanResponse([confirmed], cancelled), [cancelled])
+})
+
+test('equal revisions retain the existing snapshot rather than mixing response fields', () => {
+  const current = [responsePlan(3, 'cancelled', { title: 'Authoritative snapshot' })]
+  assert.strictEqual(reconcilePlanResponse(current, responsePlan(3, 'confirmed')), current)
 })
 
 after(async () => { await rm(scratch, { force: true, recursive: true }) })

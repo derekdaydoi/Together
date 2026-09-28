@@ -1,11 +1,11 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { Check, CircleAlert } from 'lucide-react'
 import type { View, Tone } from './appTypes'
 import type { CoupleState, SharedPlan } from './types'
 import { BottomNav, BrandMark, Shell, Signature, TopBack } from './UI'
 import { loadDemoState, saveDemoState } from './lib/demoStore'
 import { isSupabaseConfigured, supabase } from './lib/supabase'
-import { loadRemoteState, subscribeRemote } from './lib/remoteStore'
+import { loadRemoteProfileState, loadRemoteState, subscribeRemote } from './lib/remoteStore'
 import { Onboarding, ProfileSetup, Connect } from './screens-setup'
 import { Today, Week, Us } from './screens-home'
 import { Plans } from './screens-plans'
@@ -14,6 +14,15 @@ import { PlanDetail, PlanForm } from './screens-plan'
 import { AvailabilityForm, WorkForm } from './screens-schedule'
 
 type ToastState={message:string;tone?:Tone}
+
+// A remote account must never inherit the locally cached demo or another
+// account's profile, couple, schedules, and private check-ins.
+const emptyRemoteState=(userId=''):CoupleState=>({
+  id:'',name:'Chúng mình',inviteCode:'',
+  me:{id:userId,displayName:'Bạn'},
+  partner:{id:'waiting-partner',displayName:'Người ấy'},
+  dailyStates:[],workSchedules:[],availability:[],plans:[],checkins:[],
+})
 
 const PRODUCTION_APP_URL='https://derekdaydoi.github.io/Together/'
 
@@ -32,7 +41,7 @@ const friendlyAuthError=(value:string)=>{
 const authRedirectUrl=()=>import.meta.env.PROD?PRODUCTION_APP_URL:new URL(import.meta.env.BASE_URL,window.location.origin).toString()
 
 export default function App(){
-  const [state,setState]=useState<CoupleState>(()=>loadDemoState())
+  const [state,setState]=useState<CoupleState>(()=>isSupabaseConfigured?emptyRemoteState():loadDemoState())
   const [view,setView]=useState<View>(initialView)
   const [previousView,setPreviousView]=useState<View>('today')
   const [toast,setToast]=useState<ToastState|null>(null)
@@ -43,7 +52,10 @@ export default function App(){
   const [authSent,setAuthSent]=useState(false)
   const [authError,setAuthError]=useState<string|null>(null)
   const [authCooldown,setAuthCooldown]=useState(0)
-  const [sessionReady,setSessionReady]=useState(!isSupabaseConfigured)
+  const [authUserId,setAuthUserId]=useState<string|null>(null)
+  const authUserRef=useRef<string|null>(null)
+  const authEpochRef=useRef(0)
+  const sessionReady=!isSupabaseConfigured||Boolean(authUserId)
   const [sessionChecked,setSessionChecked]=useState(!isSupabaseConfigured)
   const [remoteStatus,setRemoteStatus]=useState<'loading'|'ready'|'error'>(isSupabaseConfigured?'loading':'ready')
   const [remoteError,setRemoteError]=useState<string|null>(null)
@@ -61,34 +73,55 @@ export default function App(){
   useEffect(()=>{
     if(!supabase)return
     let alive=true
+    let authEventObserved=false
+    const applySession=(userId:string|null)=>{
+      if(!alive)return
+      if(authUserRef.current!==userId){
+        if(authUserRef.current&&!userId){sessionStorage.removeItem('together-auth-email');setAuthEmail('')}
+        authUserRef.current=userId
+        authEpochRef.current++
+        setState(emptyRemoteState(userId??''))
+        setSelectedPlan(null)
+        setEditingPlan(null)
+        setSuggestedPlan(null)
+        setPreviousView('today')
+        setToast(null)
+        setRemoteError(null)
+        setRemoteStatus('loading')
+        setView(userId?'today':'login')
+      }
+      setAuthUserId(userId)
+      setSessionChecked(true)
+    }
     supabase.auth.getSession().then(({data,error})=>{
-      if(!alive)return
+      if(!alive||authEventObserved)return
       if(error)setAuthError(error.message)
-      setSessionReady(Boolean(data.session))
-      setSessionChecked(true)
+      applySession(data.session?.user.id??null)
     }).catch(error=>{
-      if(!alive)return
+      if(!alive||authEventObserved)return
       setAuthError(error instanceof Error?error.message:'Không thể kiểm tra phiên đăng nhập.')
-      setSessionReady(false)
-      setSessionChecked(true)
+      applySession(null)
     })
     const{data:l}=supabase.auth.onAuthStateChange((event,session)=>{
-      setSessionReady(Boolean(session))
-      setSessionChecked(true)
+      authEventObserved=true
+      applySession(session?.user.id??null)
       if(session){localStorage.setItem('together-onboarded','1');setAuthError(null);setAuthCooldown(0)}
-      if(event==='SIGNED_OUT'){setRemoteStatus('loading');setView('login')}
+      if(event==='SIGNED_OUT'){setAuthSent(false);setView('login')}
     })
     return()=>{alive=false;l.subscription.unsubscribe()}
   },[])
   useEffect(()=>{
-    if(!supabase||!sessionReady)return
+    if(!supabase||!authUserId)return
     let dead=false
     let unsubscribe=()=>{}
+    let readyForRefresh=false
+    const isActive=()=>!dead&&authUserRef.current===authUserId
     // Realtime can deliver several events for one action. Process refreshes in
     // order, then rerun once when changes arrive during an in-flight request.
     let refreshInFlight=false
     let refreshAgain=false
     const refresh=async()=>{
+      if(!readyForRefresh||!isActive())return
       if(refreshInFlight){refreshAgain=true;return}
       refreshInFlight=true
       try {
@@ -96,13 +129,20 @@ export default function App(){
           refreshAgain=false
           try {
             const fresh=await loadRemoteState()
-            if(dead)return
+            if(!isActive())return
             if(fresh){setState(fresh);setRemoteError(null);setRemoteStatus('ready')}
+            else{
+              const profile=await loadRemoteProfileState()
+              if(!isActive())return
+              unsubscribe();unsubscribe=()=>{}
+              setState(profile);setSelectedPlan(null);setEditingPlan(null)
+              setView('profile');setRemoteError(null);setRemoteStatus('ready')
+            }
           }catch(error){
-            if(!dead){setRemoteError(error instanceof Error?error.message:'Không thể đồng bộ dữ liệu.');setRemoteStatus('error')}
+            if(isActive()){setRemoteError(error instanceof Error?error.message:'Không thể đồng bộ dữ liệu.');setRemoteStatus('error')}
             return
           }
-        } while(refreshAgain&&!dead)
+        } while(refreshAgain&&isActive())
       } finally {refreshInFlight=false}
     }
     setRemoteStatus('loading')
@@ -110,15 +150,22 @@ export default function App(){
     ;(async()=>{
       try{
         const remote=await loadRemoteState()
-        if(dead)return
+        if(!isActive())return
         localStorage.setItem('together-onboarded','1')
         if(remote){
           setState(remote)
           setView('today')
+          readyForRefresh=true
           unsubscribe=subscribeRemote(remote.id,refresh)
-        }else setView('profile')
+        }else{
+          const profile=await loadRemoteProfileState()
+          if(!isActive())return
+          setState(profile)
+          setView('profile')
+          readyForRefresh=true
+        }
         setRemoteStatus('ready')
-      }catch(e){if(!dead){setRemoteError(e instanceof Error?e.message:'Không thể tải không gian Together.');setRemoteStatus('error')}}
+      }catch(e){if(isActive()){setRemoteError(e instanceof Error?e.message:'Không thể tải không gian Together.');setRemoteStatus('error')}}
     })()
     // Browser sleep/offline transitions can drop change events even when a
     // websocket reconnects. Refresh the authorized couple snapshot on return.
@@ -131,7 +178,7 @@ export default function App(){
       document.removeEventListener('visibilitychange',refreshWhenVisible)
       window.removeEventListener('focus',refreshWhenFocused)
     }
-  },[sessionReady,remoteRetry])
+  },[authUserId,remoteRetry])
   useEffect(()=>{
     if(remoteStatus!=='error')return
     const retry=()=>setRemoteRetry(value=>value+1)
@@ -139,16 +186,31 @@ export default function App(){
     return()=>window.removeEventListener('online',retry)
   },[remoteStatus])
 
-  const updateState=(fn:(draft:CoupleState)=>void)=>setState(old=>{const draft=structuredClone(old);fn(draft);return draft})
-  const open=(next:View,from:View=view)=>{if(next==='plan'){setEditingPlan(null);setSuggestedPlan(null)}setPreviousView(from);window.scrollTo({top:0,behavior:'smooth'});setView(next)}
+  // Async callbacks from unmounted screens must not write into a new session.
+  const updateEpoch=authEpochRef.current
+  const sessionIsCurrent=()=>authEpochRef.current===updateEpoch
+  const updateState=(fn:(draft:CoupleState)=>void)=>{
+    if(!sessionIsCurrent())return
+    setState(old=>{if(!sessionIsCurrent())return old;const draft=structuredClone(old);fn(draft);return draft})
+  }
+  const navigate=(next:View)=>{if(sessionIsCurrent())setView(next)}
+  const open=(next:View,from:View=view)=>{if(!sessionIsCurrent())return;if(next==='plan'){setEditingPlan(null);setSuggestedPlan(null)}setPreviousView(from);window.scrollTo({top:0,behavior:'smooth'});setView(next)}
   const suggestPlan=(date:string,start:string,end:string,from:View)=>{open('plan',from);setSuggestedPlan({date,start,end})}
-  const notify=(message:string,tone:Tone='success')=>setToast({message,tone})
+  const notify=(message:string,tone:Tone='success')=>{if(sessionIsCurrent())setToast({message,tone})}
   const finishOnboarding=()=>{localStorage.setItem('together-onboarded','1');setView(isSupabaseConfigured?'login':'profile')}
   // First-time members had no couple during the initial session load, so they
   // must start their couple-scoped realtime subscription after creating/joining.
-  const finishCoupleSetup=()=>{if(supabase)setRemoteRetry(value=>value+1);setView('today')}
+  const finishCoupleSetup=()=>{if(!sessionIsCurrent())return;if(supabase)setRemoteRetry(value=>value+1);setView('today')}
   const backToOnboarding=()=>{localStorage.removeItem('together-onboarded');setAuthSent(false);setAuthError(null);setAuthCooldown(0);setView('onboarding')}
-  const backToLogin=async()=>{setAuthSent(false);setAuthError(null);setAuthCooldown(0);setRemoteStatus('loading');if(supabase)await supabase.auth.signOut();setSessionReady(false);setSessionChecked(true);setView('login')}
+  const backToLogin=async()=>{
+    setAuthSent(false);setAuthError(null);setAuthCooldown(0)
+    if(supabase){
+      setRemoteStatus('loading')
+      const{error}=await supabase.auth.signOut()
+      if(error){setRemoteStatus('ready');notify(error.message,'normal');return}
+    }
+    setView('login')
+  }
   const sendMagicLink=async()=>{
     if(!supabase||!authEmail.trim()||authCooldown>0)return
     setAuthError(null)
@@ -188,18 +250,18 @@ export default function App(){
   const common={state,updateState,open,notify}
   const minimal=['login','profile','connect','daily','work','availability','plan','plan-detail','checkin'].includes(view)
   return <Shell minimal={minimal}>
-    {view==='profile'&&<ProfileSetup {...common} onBack={backToLogin} onContinue={()=>setView('connect')}/>} 
-    {view==='connect'&&<Connect {...common} onBack={()=>setView('profile')} onDone={finishCoupleSetup}/>}
+    {view==='profile'&&<ProfileSetup key={authUserId??'demo'} {...common} onBack={backToLogin} onContinue={()=>navigate('connect')}/>}
+    {view==='connect'&&<Connect key={authUserId??'demo'} {...common} onBack={()=>navigate('profile')} onDone={finishCoupleSetup}/>}
     {view==='today'&&<Today {...common} onPickSuggestion={(date,start,end)=>suggestPlan(date,start,end,'today')}/>}
     {view==='week'&&<Week {...common} onPickSuggestion={(date,start,end)=>suggestPlan(date,start,end,'week')}/>}
     {view==='plans'&&<Plans {...common} onSelect={plan=>{setSelectedPlan(plan);open('plan-detail','plans')}}/>} 
     {view==='us'&&<Us {...common}/>} 
-    {view==='daily'&&<DailyStateForm {...common} onClose={()=>setView(previousView)}/>} 
-    {view==='work'&&<WorkForm {...common} onClose={()=>setView(previousView)}/>} 
-    {view==='availability'&&<AvailabilityForm {...common} onClose={()=>setView(previousView)}/>} 
-    {view==='plan'&&<PlanForm {...common} initialPlan={editingPlan??undefined} suggestedSlot={suggestedPlan??undefined} onClose={()=>{setEditingPlan(null);setView(previousView)}}/>}
-    {view==='plan-detail'&&selectedPlan&&<PlanDetail plan={selectedPlan} {...common} onClose={()=>setView(previousView)} onEdit={()=>{setEditingPlan(state.plans.find(plan=>plan.id===selectedPlan.id)??selectedPlan);setPreviousView('plan-detail');setView('plan')}}/>}
-    {view==='checkin'&&<CheckinForm {...common} onClose={()=>setView(previousView)}/>} 
+    {view==='daily'&&<DailyStateForm {...common} onClose={()=>navigate(previousView)}/>}
+    {view==='work'&&<WorkForm {...common} onClose={()=>navigate(previousView)}/>}
+    {view==='availability'&&<AvailabilityForm {...common} onClose={()=>navigate(previousView)}/>}
+    {view==='plan'&&<PlanForm {...common} initialPlan={editingPlan??undefined} suggestedSlot={suggestedPlan??undefined} onClose={()=>{if(sessionIsCurrent()){setEditingPlan(null);setView(previousView)}}}/>}
+    {view==='plan-detail'&&selectedPlan&&<PlanDetail plan={selectedPlan} {...common} onClose={()=>navigate(previousView)} onEdit={()=>{if(!sessionIsCurrent())return;setEditingPlan(state.plans.find(plan=>plan.id===selectedPlan.id)??selectedPlan);setPreviousView('plan-detail');setView('plan')}}/>}
+    {view==='checkin'&&<CheckinForm {...common} onClose={()=>navigate(previousView)}/>}
     {['today','week','plans','us'].includes(view)&&<BottomNav active={view} onChange={v=>setView(v)}/>} 
     {toast&&<div className={`toast ${toast.tone==='success'?'success':''}`}><Check size={16}/>{toast.message}</div>}
   </Shell>

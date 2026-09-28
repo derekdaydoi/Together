@@ -7,11 +7,14 @@ const client = () => {
   return supabase
 }
 
-export async function ensureRemoteProfile(displayName = 'Bạn') {
+export async function ensureRemoteProfile(displayName = 'Bạn', expectedUserId?: string) {
   const sb = client()
   const { data: userData, error: userError } = await sb.auth.getUser()
   if (userError || !userData.user) throw userError ?? new Error('Chưa đăng nhập.')
   const user = userData.user
+  // Verify identity before the bootstrap INSERT, which could otherwise save
+  // the previous account's display name in the newly signed-in user's profile.
+  if (expectedUserId && user.id !== expectedUserId) throw new Error('Tài khoản đã thay đổi. Hãy tải lại hồ sơ.')
   const { data } = await sb.from('profiles').select('id,display_name,avatar_path').eq('id', user.id).maybeSingle()
   if (!data) {
     const { error } = await sb.from('profiles').insert({ id: user.id, display_name: displayName })
@@ -20,9 +23,9 @@ export async function ensureRemoteProfile(displayName = 'Bạn') {
   return user
 }
 
-export async function saveRemoteProfile(displayName: string, avatarPath?: string) {
+export async function saveRemoteProfile(displayName: string, avatarPath?: string, expectedUserId?: string) {
   const sb = client()
-  const user = await ensureRemoteProfile(displayName)
+  const user = await ensureRemoteProfile(displayName, expectedUserId)
   const payload: Record<string, unknown> = { id: user.id, display_name: displayName, updated_at: new Date().toISOString() }
   if (avatarPath !== undefined) payload.avatar_path = avatarPath
   const { error } = await sb.from('profiles').upsert(payload, { onConflict: 'id' })
@@ -117,16 +120,20 @@ export async function loadRemoteState(): Promise<CoupleState | null> {
   }
 }
 
-export async function createRemoteCouple() {
+export async function createRemoteCouple(expectedUserId?: string) {
   const sb = client()
-  const user = await ensureRemoteProfile()
+  const user = await ensureRemoteProfile('Bạn', expectedUserId)
   const { data, error } = await sb.from('couples').insert({ name: 'Chúng mình', created_by: user.id }).select('id').single()
   if (error) throw error
   return data.id as string
 }
 
-export async function joinRemoteCouple(code: string) {
+export async function joinRemoteCouple(code: string, expectedUserId?: string) {
   const sb = client()
+  if (expectedUserId) {
+    const { data, error } = await sb.auth.getUser()
+    if (error || data.user?.id !== expectedUserId) throw new Error('Tài khoản đã thay đổi. Hãy tải lại trước khi tham gia couple.')
+  }
   const { data, error } = await sb.functions.invoke('join-couple', { body: { code } })
   if (error) throw error
   if (!data?.ok) throw new Error(data?.message ?? 'Không thể tham gia couple.')
@@ -143,6 +150,23 @@ export async function saveRemoteWork(coupleId: string, input: WorkSchedule) {
   const { data, error } = await sb.from('work_schedules').insert({ couple_id: coupleId, user_id: input.userId, starts_at: localTimestamp(input.date, input.start), ends_at: localTimestamp(input.date, input.end), work_type: input.type, note: input.note ?? null, repeats_weekly: Boolean(input.repeatsWeekly) }).select('id').single()
   if (error) throw error
   return data.id as string
+}
+
+// A signed-in user without a couple still needs their own remote profile on
+// the setup screen. Never reuse another user's state or the demo seed.
+export async function loadRemoteProfileState(): Promise<CoupleState> {
+  const sb = client()
+  const user = await ensureRemoteProfile()
+  const { data: profile, error } = await sb.from('profiles')
+    .select('id,display_name,avatar_path').eq('id', user.id).single()
+  if (error) throw error
+  return {
+    id: '', name: 'Chúng mình', inviteCode: '',
+    me: { id: user.id, displayName: profile.display_name, avatarPath: profile.avatar_path ?? undefined,
+      avatarUrl: await signedAvatar(profile.avatar_path) },
+    partner: { id: 'waiting-partner', displayName: 'Người ấy' },
+    dailyStates: [], workSchedules: [], availability: [], plans: [], checkins: [],
+  }
 }
 
 export async function saveRemoteAvailability(coupleId: string, input: AvailabilityBlock) {

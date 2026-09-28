@@ -1,9 +1,8 @@
-import { useState } from 'react'
+import { useRef, useState } from 'react'
 import { CalendarDays, Check, Clock3, Heart, MapPin } from 'lucide-react'
 import type { CommonProps } from './appTypes'
 import type { PlanType, SharedPlan } from './types'
 import { Avatar, Field, Page, TopBack } from './UI'
-import { addPlan } from './lib/demoStore'
 import { localISODate, validTimeRange } from './lib/dates'
 import { planIdeas } from './lib/planIdeas'
 import { cancelRemotePlan, confirmRemotePlan, saveRemotePlan, updateRemotePlan } from './lib/remoteStore'
@@ -13,6 +12,16 @@ const uid = () => `plan-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`
 const formatDate = (date: string) => new Intl.DateTimeFormat('vi-VN', {
   weekday: 'long', day: 'numeric', month: 'long', year: 'numeric',
 }).format(new Date(`${date}T12:00:00`))
+
+// HTTP responses and realtime snapshots can arrive in either order. An equal
+// revision already represents this write; an older one must never replace it.
+// Only a new create may insert a missing row, never edit/confirm/cancel.
+export function reconcilePlanResponse(plans: SharedPlan[], response: SharedPlan, allowInsert = false): SharedPlan[] {
+  const existing = plans.find(item => item.id === response.id)
+  if (!existing) return allowInsert ? [response, ...plans] : plans
+  if (existing.revision >= response.revision) return plans
+  return plans.map(item => item.id === response.id ? response : item)
+}
 
 export function PlanForm({ state, updateState, notify, onClose, initialPlan, suggestedSlot }: CommonProps & {
   onClose: () => void
@@ -28,10 +37,17 @@ export function PlanForm({ state, updateState, notify, onClose, initialPlan, sug
   const [note, setNote] = useState(initialPlan?.note ?? '')
   const [selectedIdea, setSelectedIdea] = useState('')
   const [busy, setBusy] = useState(false)
+  // Remember rows seen while creating: if realtime inserts then removes the new
+  // row before its HTTP response arrives, that response must not resurrect it.
+  const observedPlanIds = useRef(new Set<string>())
+  for (const item of state.plans) observedPlanIds.current.add(item.id)
+  const latestEdit = initialPlan ? state.plans.find(item => item.id === initialPlan.id) : undefined
+  const editUnavailable = Boolean(initialPlan && (!latestEdit || latestEdit.status === 'cancelled'))
   const suggested = planIdeas(state, date)
 
   const save = async () => {
     if (busy) return
+    if (editUnavailable) return notify('Kế hoạch đã bị huỷ hoặc không còn tồn tại. Hãy quay lại danh sách.', 'normal')
     if (!title.trim()) return notify('Hãy đặt tên cho kế hoạch.', 'normal')
     if (!validTimeRange(start, end)) return notify('Giờ kết thúc phải sau giờ bắt đầu trong cùng một ngày.', 'normal')
     if (title.trim().length > 160 || location.length > 300 || note.length > 800) {
@@ -50,11 +66,12 @@ export function PlanForm({ state, updateState, notify, onClose, initialPlan, sug
       } else if (initialPlan) {
         next.revision += 1
       }
+      const allowInsert = !initialPlan && !observedPlanIds.current.has(next.id)
       updateState(draft => {
-        if (initialPlan) draft.plans = draft.plans.map(plan => plan.id === initialPlan.id ? next : plan)
-        else addPlan(draft, next)
+        if (draft.id !== state.id || draft.me.id !== state.me.id) return
+        draft.plans = reconcilePlanResponse(draft.plans, next, allowInsert)
       })
-      notify(type === 'hard' ? 'Đã gửi kế hoạch. Người ấy cần xác nhận.' : initialPlan ? 'Đã lưu thay đổi kế hoạch.' : 'Đã tạo kế hoạch chung.')
+      notify(initialPlan ? 'Đã lưu yêu cầu chỉnh sửa.' : 'Đã gửi kế hoạch mới.')
       onClose()
     } catch (error) {
       notify(error instanceof Error ? error.message : 'Không thể lưu kế hoạch.', 'normal')
@@ -92,7 +109,8 @@ export function PlanForm({ state, updateState, notify, onClose, initialPlan, sug
       <Avatar profile={state.me} size="sm"/><Avatar profile={state.partner} size="sm"/>
       <strong>{state.me.displayName} + {state.partner.displayName}</strong>
     </div></div>
-    <button className="primary-button sticky-action" disabled={busy} onClick={save}>
+    {editUnavailable && <p className="privacy-note" role="status">Kế hoạch đã bị huỷ hoặc không còn tồn tại. Hãy quay lại danh sách để xem trạng thái mới.</p>}
+    <button className="primary-button sticky-action" disabled={busy || editUnavailable} onClick={save}>
       {busy ? 'Đang lưu…' : initialPlan ? 'Lưu thay đổi' : 'Tạo kế hoạch'}
     </button>
   </Page>
@@ -103,36 +121,48 @@ export function PlanDetail({ plan, state, updateState, notify, onClose, onEdit }
   onClose: () => void
   onEdit: () => void
 }) {
-  const current = state.plans.find(item => item.id === plan.id) ?? plan
+  const current = state.plans.find(item => item.id === plan.id)
   const [busy, setBusy] = useState(false)
   // Keep the version the person deliberately opened. A realtime refresh may
   // change the visible proposal; that must require an explicit second review.
-  const [viewedRevision, setViewedRevision] = useState(plan.revision ?? current.revision)
-  const isHardPending = current.type === 'hard' && current.status === 'proposed'
+  const [viewedRevision, setViewedRevision] = useState(plan.revision)
+  const isHardPending = current?.type === 'hard' && current.status === 'proposed'
   const needsReview = isHardPending && current.createdBy !== state.me.id && current.revision !== viewedRevision
   const canConfirm = isHardPending && current.createdBy !== state.me.id && !needsReview
   const confirm = async () => {
-    if (busy || !canConfirm) return
+    if (busy || !current || !canConfirm) return
     setBusy(true)
     try {
       const revision = supabase ? await confirmRemotePlan(state.id, current.id, viewedRevision) : current.revision + 1
-      updateState(draft => { draft.plans = draft.plans.map(item => item.id === current.id ? { ...item, status: 'confirmed', revision } : item) })
-      notify('Hai người đã xác nhận kế hoạch.')
+      updateState(draft => {
+        if (draft.id !== state.id || draft.me.id !== state.me.id) return
+        draft.plans = reconcilePlanResponse(draft.plans, { ...current, status: 'confirmed', revision })
+      })
+      notify('Đã lưu xác nhận của bạn.')
     } catch (error) { notify(error instanceof Error ? error.message : 'Không thể xác nhận kế hoạch.', 'normal') }
     finally { setBusy(false) }
   }
   const cancel = async () => {
-    if (busy || !window.confirm('Huỷ kế hoạch này cho cả hai?')) return
+    if (busy || !current || current.status === 'cancelled' || !window.confirm('Huỷ kế hoạch này cho cả hai?')) return
     setBusy(true)
     try {
       const revision = supabase ? await cancelRemotePlan(state.id, current.id, current.revision) : current.revision + 1
-      updateState(draft => { draft.plans = draft.plans.map(item => item.id === current.id ? { ...item, status: 'cancelled', revision } : item) })
-      notify('Đã huỷ kế hoạch.')
+      updateState(draft => {
+        if (draft.id !== state.id || draft.me.id !== state.me.id) return
+        draft.plans = reconcilePlanResponse(draft.plans, { ...current, status: 'cancelled', revision })
+      })
+      notify('Đã lưu yêu cầu huỷ của bạn.')
       onClose()
     } catch (error) {
       notify(error instanceof Error ? error.message : 'Không thể huỷ kế hoạch.', 'normal')
     } finally { setBusy(false) }
   }
+
+  if (!current) return <Page className="detail-page">
+    <TopBack title="Chi tiết kế hoạch" onBack={onClose}/>
+    <p className="privacy-note" role="status">Kế hoạch này không còn tồn tại hoặc bạn không còn quyền xem.</p>
+    <button className="secondary-button" onClick={onClose}>Quay lại danh sách</button>
+  </Page>
 
   return <Page className="detail-page">
     <TopBack title="Chi tiết kế hoạch" onBack={onClose}/>
