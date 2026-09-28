@@ -1,20 +1,12 @@
 import type { CoupleState, DailyState, WorkSchedule, AvailabilityBlock, SharedPlan, WeeklyCheckin } from '../types'
+import { addDaysISO, localISODate, weekStartISO } from './dates'
 
 const KEY = 'together-demo-state-v1'
 
 const today = new Date()
-const iso = (d: Date) => d.toISOString().slice(0, 10)
-const plusDays = (n: number) => {
-  const d = new Date(today)
-  d.setDate(d.getDate() + n)
-  return iso(d)
-}
-const monday = (() => {
-  const d = new Date(today)
-  const day = d.getDay() || 7
-  d.setDate(d.getDate() - day + 1)
-  return iso(d)
-})()
+const iso = localISODate
+const plusDays = (n: number) => addDaysISO(iso(today), n)
+const monday = weekStartISO(today)
 
 const seed: CoupleState = {
   id: 'demo-couple',

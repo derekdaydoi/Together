@@ -336,3 +336,4 @@ alter publication supabase_realtime add table public.work_schedules;
 alter publication supabase_realtime add table public.availability_blocks;
 alter publication supabase_realtime add table public.plans;
 alter publication supabase_realtime add table public.weekly_checkins;
+alter publication supabase_realtime add table public.couple_members;

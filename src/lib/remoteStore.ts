@@ -1,5 +1,6 @@
 import { supabase } from './supabase'
 import type { AvailabilityBlock, CoupleState, DailyState, SharedPlan, WeeklyCheckin, WorkSchedule } from '../types'
+import { localTimestamp } from './dates'
 
 const client = () => {
   if (!supabase) throw new Error('Supabase chưa được cấu hình.')
@@ -64,6 +65,10 @@ export async function loadRemoteState(): Promise<CoupleState | null> {
   ])
   if (coupleRes.error) throw coupleRes.error
   if (membersRes.error) throw membersRes.error
+  // A partial snapshot would otherwise silently masquerade as empty schedules or plans.
+  for (const result of [dailyRes, workRes, availabilityRes, plansRes, checkinsRes]) {
+    if (result.error) throw result.error
+  }
 
   const memberIds = (membersRes.data ?? []).map((m: any) => m.user_id as string)
   const { data: profiles, error: profilesError } = await sb.from('profiles').select('id,display_name,avatar_path').in('id', memberIds)
@@ -133,24 +138,71 @@ export async function saveRemoteDaily(coupleId: string, input: DailyState) {
   if (error) throw error
 }
 
-const localTimestamp = (date: string, time: string) => new Date(`${date}T${time}:00`).toISOString()
-
 export async function saveRemoteWork(coupleId: string, input: WorkSchedule) {
   const sb = client()
-  const { error } = await sb.from('work_schedules').insert({ couple_id: coupleId, user_id: input.userId, starts_at: localTimestamp(input.date, input.start), ends_at: localTimestamp(input.date, input.end), work_type: input.type, note: input.note ?? null, repeats_weekly: Boolean(input.repeatsWeekly) })
+  const { data, error } = await sb.from('work_schedules').insert({ couple_id: coupleId, user_id: input.userId, starts_at: localTimestamp(input.date, input.start), ends_at: localTimestamp(input.date, input.end), work_type: input.type, note: input.note ?? null, repeats_weekly: Boolean(input.repeatsWeekly) }).select('id').single()
   if (error) throw error
+  return data.id as string
 }
 
 export async function saveRemoteAvailability(coupleId: string, input: AvailabilityBlock) {
   const sb = client()
-  const { error } = await sb.from('availability_blocks').insert({ couple_id: coupleId, user_id: input.userId, starts_at: localTimestamp(input.date, input.start), ends_at: localTimestamp(input.date, input.end), status: input.status, note: input.note ?? null })
+  const { data, error } = await sb.from('availability_blocks').insert({ couple_id: coupleId, user_id: input.userId, starts_at: localTimestamp(input.date, input.start), ends_at: localTimestamp(input.date, input.end), status: input.status, note: input.note ?? null }).select('id').single()
   if (error) throw error
+  return data.id as string
 }
+
+async function deleteOwnRow(table: 'work_schedules' | 'availability_blocks', coupleId: string, rowId: string) {
+  const sb = client()
+  const { data: userData, error: userError } = await sb.auth.getUser()
+  if (userError || !userData.user) throw userError ?? new Error('Chưa đăng nhập.')
+  const { data, error } = await sb.from(table).delete()
+    .eq('id', rowId).eq('couple_id', coupleId).eq('user_id', userData.user.id).select('id').single()
+  if (error) throw error
+  return data.id as string
+}
+
+export const deleteRemoteWork = (coupleId: string, id: string) => deleteOwnRow('work_schedules', coupleId, id)
+export const deleteRemoteAvailability = (coupleId: string, id: string) => deleteOwnRow('availability_blocks', coupleId, id)
 
 export async function saveRemotePlan(coupleId: string, input: SharedPlan) {
   const sb = client()
-  const { error } = await sb.from('plans').insert({ couple_id: coupleId, created_by: input.createdBy, title: input.title, starts_at: localTimestamp(input.date, input.start), ends_at: localTimestamp(input.date, input.end), plan_type: input.type, status: input.status, location: input.location ?? null, note: input.note ?? null })
+  const { data, error } = await sb.from('plans').insert({ couple_id: coupleId, created_by: input.createdBy, title: input.title, starts_at: localTimestamp(input.date, input.start), ends_at: localTimestamp(input.date, input.end), plan_type: input.type, status: input.status, location: input.location ?? null, note: input.note ?? null }).select('id').single()
   if (error) throw error
+  return data.id as string
+}
+
+export async function updateRemotePlan(coupleId: string, input: SharedPlan) {
+  const sb = client()
+  const { data, error } = await sb.from('plans').update({
+    title: input.title, starts_at: localTimestamp(input.date, input.start),
+    ends_at: localTimestamp(input.date, input.end), plan_type: input.type, status: input.status,
+    location: input.location ?? null, note: input.note ?? null, updated_at: new Date().toISOString(),
+  }).eq('couple_id', coupleId).eq('id', input.id).select('id').single()
+  if (error) throw error
+  return data.id as string
+}
+
+export async function cancelRemotePlan(coupleId: string, planId: string) {
+  const sb = client()
+  const { data, error } = await sb.from('plans')
+    .update({ status: 'cancelled', updated_at: new Date().toISOString() })
+    .eq('couple_id', coupleId).eq('id', planId).select('id').single()
+  if (error) throw error
+  return data.id as string
+}
+
+export async function confirmRemotePlan(coupleId: string, planId: string) {
+  const sb = client()
+  const { data: userData, error: userError } = await sb.auth.getUser()
+  if (userError || !userData.user) throw userError ?? new Error('Chưa đăng nhập.')
+  // Optimistic concurrency: only the invited partner can accept a pending proposal.
+  const { data, error } = await sb.from('plans')
+    .update({ status: 'confirmed', updated_at: new Date().toISOString() })
+    .eq('couple_id', coupleId).eq('id', planId).eq('status', 'proposed')
+    .eq('plan_type', 'hard').neq('created_by', userData.user.id).select('id').single()
+  if (error) throw error
+  return data.id as string
 }
 
 export async function saveRemoteCheckin(coupleId: string, input: WeeklyCheckin) {
@@ -165,6 +217,8 @@ export function subscribeRemote(coupleId: string, onChange: () => void) {
   ;['daily_states', 'work_schedules', 'availability_blocks', 'plans', 'weekly_checkins'].forEach((table) => {
     channel.on('postgres_changes', { event: '*', schema: 'public', table, filter: `couple_id=eq.${coupleId}` }, onChange)
   })
+  // The first partner joining must update the owner's screen without a reload.
+  channel.on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'couple_members', filter: `couple_id=eq.${coupleId}` }, onChange)
   channel.subscribe()
   return () => { sb.removeChannel(channel) }
 }
