@@ -28,6 +28,9 @@ const E = '00000000-0000-0000-0000-000000000005'
 const F = '00000000-0000-0000-0000-000000000006'
 const G = '00000000-0000-0000-0000-000000000007'
 const I = '00000000-0000-0000-0000-000000000009'
+const J = '00000000-0000-0000-0000-000000000010'
+const K = '00000000-0000-0000-0000-000000000011'
+const L = '00000000-0000-0000-0000-000000000012'
 const A = '00000000-0000-0000-0000-000000000001'
 const B = '00000000-0000-0000-0000-000000000002'
 const C = '00000000-0000-0000-0000-000000000003'
@@ -35,6 +38,7 @@ const D = '00000000-0000-0000-0000-000000000004'
 const X = '10000000-0000-0000-0000-000000000001'
 const Y = '10000000-0000-0000-0000-000000000002'
 const Z = '10000000-0000-0000-0000-000000000003'
+const FULL_COUPLE = '10000000-0000-0000-0000-000000000004'
 const PAIRED_LEGACY_OWNER = '00000000-0000-0000-0000-000000000090'
 const PAIRED_LEGACY_PARTNER = '00000000-0000-0000-0000-000000000091'
 const PAIRED_LEGACY_COUPLE = '10000000-0000-0000-0000-000000000095'
@@ -149,7 +153,8 @@ try {
       await db.exec(`reset role; delete from public.couple_members
         where couple_id='${Z}' and user_id='${E}'`)
       assert.equal((await db.query(`select count(*)::int as members from public.couple_members where couple_id='${Z}'`)).rows[0].members, 1)
-      assert.equal((await db.query(`select invite_used_at from public.couples where id='${Z}'`)).rows[0].invite_used_at, inviteConsumedAt)
+      const usedAtAfterRemoval = (await db.query(`select invite_used_at from public.couples where id='${Z}'`)).rows[0].invite_used_at
+      assert.equal(new Date(usedAtAfterRemoval).getTime(), new Date(inviteConsumedAt).getTime())
       await asUser(F)
       await denied('select public.redeem_couple_invite($1)', '22023', [inviteCode])
       assert.equal((await db.query(`select 1 from public.couple_members where user_id='${F}'`)).rows.length, 0)
@@ -176,13 +181,18 @@ try {
       await asUser(B)
       await denied('select * from public.rotate_couple_invite()', '42501')
     })
-    await test('redeem rejects a third member even if an outstanding token is restored', async () => {
-      // Simulate a stale/inconsistent outstanding code on a full couple so
-      // this exercises the RPC's member-count guard, beyond the table trigger.
-      await db.exec(`reset role; update public.couples set invite_used_at=null where id='${Z}'`)
-      await asUser(I)
-      await denied('select public.redeem_couple_invite($1)', '22023', [inviteCode])
-      assert.equal((await db.query(`select 1 from public.couple_members where user_id='${I}'`)).rows.length, 0)
+    await test('redeem rejects a third member of an independent full-couple fixture', async () => {
+      // Keep this full couple separate from Z, whose invitee is removed in the
+      // consumed-token test above.
+      await db.exec(`reset role;
+        insert into auth.users(id) values ('${J}'),('${K}'),('${L}');
+        insert into public.couples(id,created_by) values ('${FULL_COUPLE}','${J}');
+        insert into public.couple_members(couple_id,user_id,role)
+          values ('${FULL_COUPLE}','${K}','member');`)
+      const fullCoupleCode = (await db.query(`select invite_code from public.couples where id='${FULL_COUPLE}'`)).rows[0].invite_code
+      await asUser(L)
+      await denied('select public.redeem_couple_invite($1)', '22023', [fullCoupleCode])
+      assert.equal((await db.query(`select 1 from public.couple_members where user_id='${L}'`)).rows.length, 0)
     })
   }
   await test('outsider cannot read another couple or its membership', async () => {
