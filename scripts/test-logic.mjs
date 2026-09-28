@@ -35,7 +35,10 @@ const { outputText: reconcilerJS } = ts.transpileModule(reconciler.getText(planS
 await writeFile(join(scratch, 'plan-response.mjs'), reconcilerJS)
 const { reconcilePlanResponse } = await import(pathToFileURL(join(scratch, 'plan-response.mjs')).href)
 
-const day = '2026-09-28'
+// Recommendation logic intentionally treats daily energy and closeness as
+// today's signals. Keep the fixture current regardless of when CI runs.
+process.env.TZ = 'Asia/Bangkok'
+const day = localISODate()
 const available = (userId, start, end, status = 'available', date = day) =>
   ({ id: `${userId}-${start}-${status}`, userId, date, start, end, status })
 const work = (userId, start, end, date = day, repeatsWeekly = false) =>
@@ -50,9 +53,8 @@ const state = (overrides = {}) => ({
 })
 
 test('dates use Vietnam calendar day across UTC midnight and week boundaries', () => {
-  process.env.TZ = 'Asia/Bangkok'
-  assert.equal(localISODate(new Date('2026-09-27T20:30:00Z')), day)
-  assert.equal(weekStartISO(new Date('2026-09-27T20:30:00Z')), day)
+  assert.equal(localISODate(new Date('2026-09-27T20:30:00Z')), '2026-09-28')
+  assert.equal(weekStartISO(new Date('2026-09-27T20:30:00Z')), '2026-09-28')
   assert.equal(addDaysISO('2026-09-28', 6), '2026-10-04')
   assert.equal(validTimeRange('19:00', '18:59'), false)
   assert.equal(validTimeRange('19:00', '21:00'), true)
@@ -74,10 +76,10 @@ test('an explicit busy or alone interval from either partner takes priority', ()
 })
 
 test('recurring work and an existing confirmed plan exclude occupied time', () => {
-  const future = '2026-10-05' // Next Monday.
+  const future = addDaysISO(day, 7)
   const busy = work('me', '19:00', '20:00', day, true)
   assert.equal(workOccursOn(busy, future), true)
-  assert.equal(workOccursOn(busy, '2026-10-06'), false)
+  assert.equal(workOccursOn(busy, addDaysISO(future, 1)), false)
   const slot = overlapSuggestion(state({
     workSchedules: [busy],
     availability: [available('me', '19:00', '22:00', 'available', future), available('partner', '19:00', '22:00', 'available', future)],

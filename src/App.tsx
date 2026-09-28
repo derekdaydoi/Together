@@ -24,21 +24,40 @@ const emptyRemoteState=(userId=''):CoupleState=>({
   dailyStates:[],workSchedules:[],availability:[],plans:[],checkins:[],
 })
 
-const PRODUCTION_APP_URL='https://derekdaydoi.github.io/Together/'
-
 const initialView=():View=>{
   if(!localStorage.getItem('together-onboarded'))return 'onboarding'
   return isSupabaseConfigured?'login':'today'
 }
 
-const cleanAuthError=(value:string)=>decodeURIComponent(value.replace(/\+/g,' '))
-const isRateLimitError=(value:string|null)=>Boolean(value&&/(rate limit|too many requests)/i.test(value))
-const friendlyAuthError=(value:string)=>{
-  if(/(rate limit|too many requests)/i.test(value))return 'Dịch vụ email đang tạm giới hạn số lần gửi. Chờ một lúc rồi thử lại; không cần bấm gửi liên tục.'
-  if(/(expired|invalid)/i.test(value))return 'Link này đã hết hạn hoặc đã được dùng. Hãy gửi một link mới rồi chỉ mở email mới nhất.'
+// URLSearchParams already decodes percent escapes. Decoding again can throw on
+// a literal percent sign in an Auth error and crash the callback page.
+export const readAuthCallbackError=(search:string,hash:string)=>{
+  for(const part of [search,hash.replace(/^#/, '')]){
+    const params=new URLSearchParams(part)
+    const message=params.get('error_description')??params.get('error')
+    if(message)return [params.get('error_code'),message].filter(Boolean).join(': ')
+  }
+  return null
+}
+export const authErrorText=(error:unknown)=>{
+  if(error&&typeof error==='object'){
+    const detail=error as {message?:string;code?:string;status?:number}
+    return [detail.code,detail.status===429?'rate limit':null,detail.message].filter(Boolean).join(': ')||'Không thể gửi email đăng nhập.'
+  }
+  return 'Không thể gửi email đăng nhập. Kiểm tra kết nối rồi thử lại.'
+}
+export const isRateLimitError=(value:string|null)=>Boolean(value&&/(rate.?limit|too many requests|over_email_send_rate_limit|over_request_rate_limit)/i.test(value))
+export const friendlyAuthError=(value:string)=>{
+  if(isRateLimitError(value))return 'Dịch vụ email đang tạm giới hạn số lần gửi. Chờ rồi thử lại; thời gian chờ của dịch vụ có thể lâu hơn bộ đếm trên nút.'
+  if(/(email_address_invalid|email_address_not_authorized|invalid email)/i.test(value))return 'Kiểm tra địa chỉ email. Nếu địa chỉ đúng nhưng chưa được phép nhận thư, quản trị viên cần kiểm tra cấu hình gửi email.'
+  if(/(otp_expired|expired|invalid.*(link|token)|(link|token).*invalid)/i.test(value))return 'Link này đã hết hạn hoặc đã được dùng. Hãy gửi một link mới rồi chỉ mở email mới nhất.'
+  if(/(smtp|error sending|email.*(disabled|not enabled))/i.test(value))return 'Dịch vụ chưa gửi được email. Quản trị viên cần kiểm tra cấu hình email và nhật ký Supabase.'
+  if(/(fetch|network|load failed)/i.test(value))return 'Không kết nối được dịch vụ đăng nhập. Kiểm tra kết nối mạng rồi thử lại.'
   return value
 }
-const authRedirectUrl=()=>import.meta.env.PROD?PRODUCTION_APP_URL:new URL(import.meta.env.BASE_URL,window.location.origin).toString()
+// Follow the actual host, including localhost when previewing a production build.
+export const authRedirectUrl=(origin:string,base:string)=>new URL(base,origin).toString()
+const callbackError=readAuthCallbackError(window.location.search,window.location.hash)
 
 export default function App(){
   const [state,setState]=useState<CoupleState>(()=>isSupabaseConfigured?emptyRemoteState():loadDemoState())
@@ -50,6 +69,8 @@ export default function App(){
   const [suggestedPlan,setSuggestedPlan]=useState<{date:string;start:string;end:string}|null>(null)
   const [authEmail,setAuthEmail]=useState(()=>sessionStorage.getItem('together-auth-email')??'')
   const [authSent,setAuthSent]=useState(false)
+  const [authSending,setAuthSending]=useState(false)
+  const authSendingRef=useRef(false)
   const [authError,setAuthError]=useState<string|null>(null)
   const [authCooldown,setAuthCooldown]=useState(0)
   const [authUserId,setAuthUserId]=useState<string|null>(null)
@@ -65,10 +86,7 @@ export default function App(){
   useEffect(()=>{if(!toast)return;const t=window.setTimeout(()=>setToast(null),2400);return()=>window.clearTimeout(t)},[toast])
   useEffect(()=>{if(authCooldown<=0)return;const t=window.setTimeout(()=>setAuthCooldown(v=>Math.max(0,v-1)),1000);return()=>window.clearTimeout(t)},[authCooldown])
   useEffect(()=>{
-    const query=new URLSearchParams(window.location.search)
-    const hash=new URLSearchParams(window.location.hash.replace(/^#/,''))
-    const message=query.get('error_description')??hash.get('error_description')
-    if(message){setAuthError(cleanAuthError(message));localStorage.setItem('together-onboarded','1');setView('login')}
+    if(callbackError){setAuthError(callbackError);localStorage.setItem('together-onboarded','1');setView('login')}
   },[])
   useEffect(()=>{
     if(!supabase)return
@@ -212,19 +230,31 @@ export default function App(){
     setView('login')
   }
   const sendMagicLink=async()=>{
-    if(!supabase||!authEmail.trim()||authCooldown>0)return
-    setAuthError(null)
+    if(!supabase||authSendingRef.current||authCooldown>0)return
     const email=authEmail.trim().toLowerCase()
-    const redirectTo=authRedirectUrl()
-    sessionStorage.setItem('together-auth-email',email)
-    const{error}=await supabase.auth.signInWithOtp({email,options:{emailRedirectTo:redirectTo,shouldCreateUser:true}})
-    if(error){
-      setAuthError(error.message)
-      if(isRateLimitError(error.message))setAuthCooldown(60)
-      notify(friendlyAuthError(error.message),'normal')
-    }else{
-      setAuthSent(true)
-      setAuthCooldown(60)
+    if(!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)){
+      setAuthError('Vui lòng nhập địa chỉ email hợp lệ.');return
+    }
+    authSendingRef.current=true
+    setAuthSending(true);setAuthError(null);setAuthSent(false)
+    const requestEpoch=authEpochRef.current
+    try{
+      const redirectTo=authRedirectUrl(window.location.origin,import.meta.env.BASE_URL)
+      // Storage can be disabled; it must not prevent requesting a link.
+      try{sessionStorage.setItem('together-auth-email',email)}catch{/* optional convenience */}
+      const{error}=await supabase.auth.signInWithOtp({email,options:{emailRedirectTo:redirectTo,shouldCreateUser:true}})
+      if(error)throw error
+      if(authEpochRef.current!==requestEpoch)return
+      setAuthSent(true);setAuthCooldown(60)
+    }catch(error){
+      if(authEpochRef.current!==requestEpoch)return
+      const message=authErrorText(error)
+      setAuthError(message)
+      if(isRateLimitError(message))setAuthCooldown(60)
+      notify(friendlyAuthError(message),'normal')
+    }finally{
+      authSendingRef.current=false
+      setAuthSending(false)
     }
   }
 
@@ -245,7 +275,7 @@ export default function App(){
 
   const shouldShowAuth=isSupabaseConfigured&&(!sessionChecked||!sessionReady)
   const rateLimited=isRateLimitError(authError)
-  if(shouldShowAuth)return <Shell minimal><div className="auth-page"><TopBack title="Đăng nhập" onBack={backToOnboarding}/><div className="auth-brand"><BrandMark/></div><div className="auth-copy"><span className="eyebrow">Không gian riêng của hai người</span><h1>Đăng nhập để giữ nhịp chung.</h1><p>Together dùng Magic Link. Không mật khẩu, không social feed, không public profile.</p></div>{!sessionChecked?<div className="auth-card auth-loading"><span className="auth-spinner"/><p>Đang kiểm tra phiên đăng nhập…</p></div>:<div className="auth-card"><label>Email của bạn</label><input value={authEmail} onChange={e=>setAuthEmail(e.target.value)} onKeyDown={e=>{if(e.key==='Enter')sendMagicLink()}} type="email" inputMode="email" autoComplete="email" placeholder="you@example.com"/><button className="primary-button" onClick={sendMagicLink} disabled={authCooldown>0}>{authCooldown>0?`Gửi lại sau ${authCooldown}s`:authSent?'Gửi lại Magic Link':'Gửi Magic Link'}</button>{authSent&&!authError&&<p className="form-hint success-text">Đã gửi. Mở email mới nhất và bấm link một lần. Bản production luôn quay về Together trên GitHub Pages.</p>}{authError&&<div className="auth-error"><CircleAlert size={17}/><div><strong>{rateLimited?'Tạm giới hạn gửi email':'Đăng nhập chưa hoàn tất'}</strong><span>{friendlyAuthError(authError)}</span><small>{rateLimited?'Đây là giới hạn của dịch vụ gửi mail trong lúc test. Together đã khóa nút gửi lại để tránh chạm quota thêm.':'Nếu link đã cũ hoặc đã bấm trước đó, hãy gửi một Magic Link mới.'}</small></div></div>}</div>}<Signature compact/></div></Shell>
+  if(shouldShowAuth)return <Shell minimal><div className="auth-page"><TopBack title="Đăng nhập" onBack={backToOnboarding}/><div className="auth-brand"><BrandMark/></div><div className="auth-copy"><span className="eyebrow">Không gian riêng của hai người</span><h1>Đăng nhập để giữ nhịp chung.</h1><p>Together dùng Magic Link. Không mật khẩu, không social feed, không public profile.</p></div>{!sessionChecked?<div className="auth-card auth-loading"><span className="auth-spinner"/><p>Đang kiểm tra phiên đăng nhập…</p></div>:<div className="auth-card"><label>Email của bạn</label><input value={authEmail} onChange={e=>setAuthEmail(e.target.value)} onKeyDown={e=>{if(e.key==='Enter')sendMagicLink()}} type="email" inputMode="email" autoComplete="email" placeholder="you@example.com"/><button className="primary-button" onClick={sendMagicLink} disabled={authSending||authCooldown>0}>{authSending?'Đang gửi…':authCooldown>0?`Gửi lại sau ${authCooldown}s`:authSent?'Gửi lại Magic Link':'Gửi Magic Link'}</button>{authSent&&!authError&&<p className="form-hint success-text">Đã yêu cầu gửi email. Kiểm tra hộp thư đến và thư rác, mở email mới nhất và bấm link một lần. Nếu đang dùng localhost, hãy giữ Together chạy trên máy này.</p>}{authError&&<div className="auth-error"><CircleAlert size={17}/><div><strong>{rateLimited?'Tạm giới hạn gửi email':'Đăng nhập chưa hoàn tất'}</strong><span>{friendlyAuthError(authError)}</span><small>{rateLimited?'Nút gửi lại sẽ mở sau thời gian chờ tối thiểu; quota gửi thư của dịch vụ có thể chưa được khôi phục.':'Nếu lỗi tiếp diễn, ghi lại thông báo để kiểm tra cấu hình dịch vụ.'}</small></div></div>}</div>}<Signature compact/></div></Shell>
 
   const common={state,updateState,open,notify}
   const minimal=['login','profile','connect','daily','work','availability','plan','plan-detail','checkin'].includes(view)

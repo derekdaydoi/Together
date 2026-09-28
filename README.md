@@ -131,6 +131,10 @@ npm install
 npm run dev
 ```
 
+Mặc định mở **http://localhost:3000/**. Trong môi trường dùng pnpm có thể chạy `pnpm dev`.
+Vite sử dụng đường dẫn gốc `/` khi phát triển và `/Together/` khi build cho GitHub Pages;
+không mở thư mục `dist/` trực tiếp dưới `localhost:3000` để thử bản phát triển.
+
 Không cấu hình Supabase thì app chạy **Demo Mode** bằng localStorage để review toàn bộ UX ngay lập tức.
 
 ### Kết nối Supabase
@@ -143,6 +147,11 @@ VITE_SUPABASE_PUBLISHABLE_KEY=sb_publishable_YOUR_KEY
 ```
 
 Sau đó apply `supabase/schema.sql` + migrations, deploy Edge Function `join-couple`, rồi chạy lại app.
+
+Nếu cần đăng nhập bằng Magic Link ngay trên máy local, tạo `.env.local` với **publishable**
+URL/key của project (không đưa secret/service-role key vào frontend). Đồng thời thêm
+`http://localhost:3000/` vào **Authentication → URL Configuration → Redirect URLs**
+trên Supabase. Link local sẽ quay về localhost, vì thế máy chạy Vite phải đang bật.
 
 ## Deploy
 
