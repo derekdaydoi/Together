@@ -39,14 +39,16 @@ export function PlanForm({ state, updateState, notify, onClose, initialPlan, sug
     }
     const next: SharedPlan = {
       id: initialPlan?.id ?? uid(), title: title.trim(), date, start, end, type,
-      status: 'proposed',
+      status: 'proposed', revision: initialPlan?.revision ?? 1,
       location: location.trim(), note: note.trim(), createdBy: initialPlan?.createdBy ?? state.me.id,
     }
     setBusy(true)
     try {
       if (supabase) {
-        if (initialPlan) await updateRemotePlan(state.id, next)
-        else next.id = await saveRemotePlan(state.id, next)
+        if (initialPlan) next.revision = await updateRemotePlan(state.id, next)
+        else Object.assign(next, await saveRemotePlan(state.id, next))
+      } else if (initialPlan) {
+        next.revision += 1
       }
       updateState(draft => {
         if (initialPlan) draft.plans = draft.plans.map(plan => plan.id === initialPlan.id ? next : plan)
@@ -103,14 +105,18 @@ export function PlanDetail({ plan, state, updateState, notify, onClose, onEdit }
 }) {
   const current = state.plans.find(item => item.id === plan.id) ?? plan
   const [busy, setBusy] = useState(false)
+  // Keep the version the person deliberately opened. A realtime refresh may
+  // change the visible proposal; that must require an explicit second review.
+  const [viewedRevision, setViewedRevision] = useState(plan.revision ?? current.revision)
   const isHardPending = current.type === 'hard' && current.status === 'proposed'
-  const canConfirm = isHardPending && current.createdBy !== state.me.id
+  const needsReview = isHardPending && current.createdBy !== state.me.id && current.revision !== viewedRevision
+  const canConfirm = isHardPending && current.createdBy !== state.me.id && !needsReview
   const confirm = async () => {
     if (busy || !canConfirm) return
     setBusy(true)
     try {
-      if (supabase) await confirmRemotePlan(state.id, current.id)
-      updateState(draft => { draft.plans = draft.plans.map(item => item.id === current.id ? { ...item, status: 'confirmed' } : item) })
+      const revision = supabase ? await confirmRemotePlan(state.id, current.id, viewedRevision) : current.revision + 1
+      updateState(draft => { draft.plans = draft.plans.map(item => item.id === current.id ? { ...item, status: 'confirmed', revision } : item) })
       notify('Hai người đã xác nhận kế hoạch.')
     } catch (error) { notify(error instanceof Error ? error.message : 'Không thể xác nhận kế hoạch.', 'normal') }
     finally { setBusy(false) }
@@ -119,8 +125,8 @@ export function PlanDetail({ plan, state, updateState, notify, onClose, onEdit }
     if (busy || !window.confirm('Huỷ kế hoạch này cho cả hai?')) return
     setBusy(true)
     try {
-      if (supabase) await cancelRemotePlan(state.id, current.id)
-      updateState(draft => { draft.plans = draft.plans.map(item => item.id === current.id ? { ...item, status: 'cancelled' } : item) })
+      const revision = supabase ? await cancelRemotePlan(state.id, current.id, current.revision) : current.revision + 1
+      updateState(draft => { draft.plans = draft.plans.map(item => item.id === current.id ? { ...item, status: 'cancelled', revision } : item) })
       notify('Đã huỷ kế hoạch.')
       onClose()
     } catch (error) {
@@ -146,6 +152,10 @@ export function PlanDetail({ plan, state, updateState, notify, onClose, onEdit }
       <Member profile={state.me}/><Member profile={state.partner}/>
     </section>
     {isHardPending && current.createdBy === state.me.id && <p className="privacy-note">Đã gửi lời mời. Khi người ấy xác nhận, kế hoạch mới được chốt.</p>}
+    {needsReview && <div className="privacy-note">
+      <p>Đề xuất đã được cập nhật sau khi bạn mở trang này. Xem lại ngày, giờ và nội dung mới trước khi xác nhận.</p>
+      <button className="secondary-button" disabled={busy} onClick={()=>setViewedRevision(current.revision)}>Tôi đã xem nội dung mới</button>
+    </div>}
     {canConfirm && <button className="primary-button" disabled={busy} onClick={confirm}>{busy ? 'Đang xác nhận…' : 'Xác nhận kế hoạch cùng nhau'}</button>}
     {current.status !== 'cancelled' && <div className="detail-actions">
       {(current.type === 'soft' || current.createdBy === state.me.id) && <button className="secondary-button" disabled={busy} onClick={onEdit}>Chỉnh sửa</button>}

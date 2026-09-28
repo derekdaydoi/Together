@@ -69,9 +69,21 @@ test('recurring work and an existing confirmed plan exclude occupied time', () =
   const slot = overlapSuggestion(state({
     workSchedules: [busy],
     availability: [available('me', '19:00', '22:00', 'available', future), available('partner', '19:00', '22:00', 'available', future)],
-    plans: [{ id: 'existing', date: future, start: '20:00', end: '21:00', status: 'confirmed' }],
+    plans: [{ id: 'existing', date: future, start: '20:00', end: '21:00', type: 'hard', status: 'confirmed' }],
   }), future)
   assert.deepEqual([slot.start, slot.end], ['21:00', '22:00'])
+})
+
+test('soft plans reserve time, hard proposals wait for confirmation, cancelled plans do not reserve', () => {
+  const base = { id: 'existing', date: day, start: '19:00', end: '21:00' }
+  const soft = overlapSuggestion(state({ plans: [{ ...base, type: 'soft', status: 'proposed' }] }), day)
+  assert.deepEqual([soft.start, soft.end], ['21:00', '22:00'])
+
+  const pendingHard = overlapSuggestion(state({ plans: [{ ...base, type: 'hard', status: 'proposed' }] }), day)
+  assert.deepEqual([pendingHard.start, pendingHard.end], ['19:00', '22:00'])
+
+  const cancelledSoft = overlapSuggestion(state({ plans: [{ ...base, type: 'soft', status: 'cancelled' }] }), day)
+  assert.deepEqual([cancelledSoft.start, cancelledSoft.end], ['19:00', '22:00'])
 })
 
 test('intervals shorter than 45 minutes do not produce a recommendation', () => {

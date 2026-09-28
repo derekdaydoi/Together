@@ -94,7 +94,7 @@ export async function loadRemoteState(): Promise<CoupleState | null> {
   })
   const plans: SharedPlan[] = (plansRes.data ?? []).map((x: any) => {
     const start = localParts(x.starts_at); const end = localParts(x.ends_at)
-    return { id: x.id, title: x.title, date: start.date, start: start.time, end: end.time, type: x.plan_type, status: x.status, location: x.location ?? undefined, note: x.note ?? undefined, createdBy: x.created_by }
+    return { id: x.id, title: x.title, date: start.date, start: start.time, end: end.time, type: x.plan_type, status: x.status, location: x.location ?? undefined, note: x.note ?? undefined, createdBy: x.created_by, revision: x.revision }
   })
   const checkins: WeeklyCheckin[] = (checkinsRes.data ?? []).map((x: any) => ({
     userId: x.user_id,
@@ -167,9 +167,9 @@ export const deleteRemoteAvailability = (coupleId: string, id: string) => delete
 
 export async function saveRemotePlan(coupleId: string, input: SharedPlan) {
   const sb = client()
-  const { data, error } = await sb.from('plans').insert({ couple_id: coupleId, created_by: input.createdBy, title: input.title, starts_at: localTimestamp(input.date, input.start), ends_at: localTimestamp(input.date, input.end), plan_type: input.type, status: input.status, location: input.location ?? null, note: input.note ?? null }).select('id').single()
+  const { data, error } = await sb.from('plans').insert({ couple_id: coupleId, created_by: input.createdBy, title: input.title, starts_at: localTimestamp(input.date, input.start), ends_at: localTimestamp(input.date, input.end), plan_type: input.type, status: input.status, location: input.location ?? null, note: input.note ?? null }).select('id,revision').single()
   if (error) throw error
-  return data.id as string
+  return { id: data.id as string, revision: data.revision as number }
 }
 
 export async function updateRemotePlan(coupleId: string, input: SharedPlan) {
@@ -178,21 +178,26 @@ export async function updateRemotePlan(coupleId: string, input: SharedPlan) {
     title: input.title, starts_at: localTimestamp(input.date, input.start),
     ends_at: localTimestamp(input.date, input.end), plan_type: input.type, status: input.status,
     location: input.location ?? null, note: input.note ?? null, updated_at: new Date().toISOString(),
-  }).eq('couple_id', coupleId).eq('id', input.id).select('id').single()
+  }).eq('couple_id', coupleId).eq('id', input.id)
+    .eq('revision', input.revision).select('revision').maybeSingle()
   if (error) throw error
-  return data.id as string
+  if (!data) throw new Error('Kế hoạch đã thay đổi trên thiết bị khác. Hãy mở lại kế hoạch trước khi sửa.')
+  return data.revision as number
 }
 
-export async function cancelRemotePlan(coupleId: string, planId: string) {
+export async function cancelRemotePlan(coupleId: string, planId: string, expectedRevision: number) {
   const sb = client()
   const { data, error } = await sb.from('plans')
     .update({ status: 'cancelled', updated_at: new Date().toISOString() })
-    .eq('couple_id', coupleId).eq('id', planId).select('id').single()
+    .eq('couple_id', coupleId).eq('id', planId)
+    .neq('status', 'cancelled').eq('revision', expectedRevision)
+    .select('revision').maybeSingle()
   if (error) throw error
-  return data.id as string
+  if (!data) throw new Error('Kế hoạch đã thay đổi hoặc đã bị huỷ ở thiết bị khác. Hãy mở lại để xem trạng thái mới.')
+  return data.revision as number
 }
 
-export async function confirmRemotePlan(coupleId: string, planId: string) {
+export async function confirmRemotePlan(coupleId: string, planId: string, expectedRevision: number) {
   const sb = client()
   const { data: userData, error: userError } = await sb.auth.getUser()
   if (userError || !userData.user) throw userError ?? new Error('Chưa đăng nhập.')
@@ -200,9 +205,11 @@ export async function confirmRemotePlan(coupleId: string, planId: string) {
   const { data, error } = await sb.from('plans')
     .update({ status: 'confirmed', updated_at: new Date().toISOString() })
     .eq('couple_id', coupleId).eq('id', planId).eq('status', 'proposed')
-    .eq('plan_type', 'hard').neq('created_by', userData.user.id).select('id').single()
+    .eq('plan_type', 'hard').neq('created_by', userData.user.id)
+    .eq('revision', expectedRevision).select('revision').maybeSingle()
   if (error) throw error
-  return data.id as string
+  if (!data) throw new Error('Kế hoạch đã thay đổi hoặc không còn chờ xác nhận. Hãy mở lại để xem nội dung mới.')
+  return data.revision as number
 }
 
 export async function saveRemoteCheckin(coupleId: string, input: WeeklyCheckin) {
@@ -219,6 +226,8 @@ export function subscribeRemote(coupleId: string, onChange: () => void) {
   })
   // The first partner joining must update the owner's screen without a reload.
   channel.on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'couple_members', filter: `couple_id=eq.${coupleId}` }, onChange)
-  channel.subscribe()
+  // A fresh snapshot after subscribing closes the gap between the initial
+  // fetch and the websocket becoming active. Repeat it after reconnects.
+  channel.subscribe(status => { if (status === 'SUBSCRIBED') onChange() })
   return () => { sb.removeChannel(channel) }
 }

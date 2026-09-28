@@ -84,6 +84,27 @@ export default function App(){
     if(!supabase||!sessionReady)return
     let dead=false
     let unsubscribe=()=>{}
+    // Realtime can deliver several events for one action. Process refreshes in
+    // order, then rerun once when changes arrive during an in-flight request.
+    let refreshInFlight=false
+    let refreshAgain=false
+    const refresh=async()=>{
+      if(refreshInFlight){refreshAgain=true;return}
+      refreshInFlight=true
+      try {
+        do {
+          refreshAgain=false
+          try {
+            const fresh=await loadRemoteState()
+            if(dead)return
+            if(fresh){setState(fresh);setRemoteError(null);setRemoteStatus('ready')}
+          }catch(error){
+            if(!dead){setRemoteError(error instanceof Error?error.message:'Không thể đồng bộ dữ liệu.');setRemoteStatus('error')}
+            return
+          }
+        } while(refreshAgain&&!dead)
+      } finally {refreshInFlight=false}
+    }
     setRemoteStatus('loading')
     setRemoteError(null)
     ;(async()=>{
@@ -94,15 +115,22 @@ export default function App(){
         if(remote){
           setState(remote)
           setView('today')
-          unsubscribe=subscribeRemote(remote.id,async()=>{
-            try {const fresh=await loadRemoteState();if(fresh&&!dead)setState(fresh)}
-            catch(error){if(!dead){setRemoteError(error instanceof Error?error.message:'Không thể đồng bộ dữ liệu.');setRemoteStatus('error')}}
-          })
+          unsubscribe=subscribeRemote(remote.id,refresh)
         }else setView('profile')
         setRemoteStatus('ready')
       }catch(e){if(!dead){setRemoteError(e instanceof Error?e.message:'Không thể tải không gian Together.');setRemoteStatus('error')}}
     })()
-    return()=>{dead=true;unsubscribe()}
+    // Browser sleep/offline transitions can drop change events even when a
+    // websocket reconnects. Refresh the authorized couple snapshot on return.
+    const refreshWhenVisible=()=>{if(document.visibilityState==='visible')void refresh()}
+    const refreshWhenFocused=()=>{void refresh()}
+    document.addEventListener('visibilitychange',refreshWhenVisible)
+    window.addEventListener('focus',refreshWhenFocused)
+    return()=>{
+      dead=true;unsubscribe()
+      document.removeEventListener('visibilitychange',refreshWhenVisible)
+      window.removeEventListener('focus',refreshWhenFocused)
+    }
   },[sessionReady,remoteRetry])
   useEffect(()=>{
     if(remoteStatus!=='error')return
@@ -116,6 +144,9 @@ export default function App(){
   const suggestPlan=(date:string,start:string,end:string,from:View)=>{open('plan',from);setSuggestedPlan({date,start,end})}
   const notify=(message:string,tone:Tone='success')=>setToast({message,tone})
   const finishOnboarding=()=>{localStorage.setItem('together-onboarded','1');setView(isSupabaseConfigured?'login':'profile')}
+  // First-time members had no couple during the initial session load, so they
+  // must start their couple-scoped realtime subscription after creating/joining.
+  const finishCoupleSetup=()=>{if(supabase)setRemoteRetry(value=>value+1);setView('today')}
   const backToOnboarding=()=>{localStorage.removeItem('together-onboarded');setAuthSent(false);setAuthError(null);setAuthCooldown(0);setView('onboarding')}
   const backToLogin=async()=>{setAuthSent(false);setAuthError(null);setAuthCooldown(0);setRemoteStatus('loading');if(supabase)await supabase.auth.signOut();setSessionReady(false);setSessionChecked(true);setView('login')}
   const sendMagicLink=async()=>{
@@ -158,7 +189,7 @@ export default function App(){
   const minimal=['login','profile','connect','daily','work','availability','plan','plan-detail','checkin'].includes(view)
   return <Shell minimal={minimal}>
     {view==='profile'&&<ProfileSetup {...common} onBack={backToLogin} onContinue={()=>setView('connect')}/>} 
-    {view==='connect'&&<Connect {...common} onBack={()=>setView('profile')} onDone={()=>setView('today')}/>} 
+    {view==='connect'&&<Connect {...common} onBack={()=>setView('profile')} onDone={finishCoupleSetup}/>}
     {view==='today'&&<Today {...common} onPickSuggestion={(date,start,end)=>suggestPlan(date,start,end,'today')}/>}
     {view==='week'&&<Week {...common} onPickSuggestion={(date,start,end)=>suggestPlan(date,start,end,'week')}/>}
     {view==='plans'&&<Plans {...common} onSelect={plan=>{setSelectedPlan(plan);open('plan-detail','plans')}}/>} 

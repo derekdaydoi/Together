@@ -36,7 +36,10 @@ export function overlapSuggestion(state: CoupleState, date: string) {
   const unavailable: Interval[] = [
     ...state.availability.filter(x => x.date === date && !usable(x)).map(x => ({ start: toMin(x.start), end: toMin(x.end) })),
     ...state.workSchedules.filter(x => x.type !== 'off' && workOccursOn(x, date)).map(x => ({ start: toMin(x.start), end: toMin(x.end) })),
-    ...state.plans.filter(x => x.date === date && x.status === 'confirmed').map(x => ({ start: toMin(x.start), end: toMin(x.end) })),
+    // Soft plans reserve their slot immediately; hard plans reserve it only after
+    // the invited partner explicitly confirms. Cancelled plans reserve nothing.
+    ...state.plans.filter(x => x.date === date && x.status !== 'cancelled' &&
+      (x.type === 'soft' || x.status === 'confirmed')).map(x => ({ start: toMin(x.start), end: toMin(x.end) })),
   ]
 
   const overlaps = mine.flatMap(a => theirs.flatMap(b => {

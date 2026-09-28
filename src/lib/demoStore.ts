@@ -34,7 +34,7 @@ const seed: CoupleState = {
     { id: 'a6', userId: 'partner', date: plusDays(4), start: '19:00', end: '23:00', status: 'available' },
   ],
   plans: [
-    { id: 'p1', title: 'Đi xem phim', date: plusDays(4), start: '19:30', end: '22:00', type: 'hard', status: 'confirmed', location: 'Rạp gần nhà', note: 'Chọn phim trước tối thứ Sáu nhé.', createdBy: 'me' },
+    { id: 'p1', title: 'Đi xem phim', date: plusDays(4), start: '19:30', end: '22:00', type: 'hard', status: 'confirmed', location: 'Rạp gần nhà', note: 'Chọn phim trước tối thứ Sáu nhé.', createdBy: 'me', revision: 1 },
   ],
   checkins: [
     { userId: 'partner', weekStart: monday, feeling: 2, note: 'Tuần này vừa đủ.' },
@@ -44,7 +44,15 @@ const seed: CoupleState = {
 export function loadDemoState(): CoupleState {
   try {
     const stored = localStorage.getItem(KEY)
-    if (stored) return JSON.parse(stored)
+    if (stored) {
+      const parsed = JSON.parse(stored) as CoupleState
+      // Demo caches created before optimistic concurrency did not store revisions.
+      parsed.plans = (parsed.plans ?? []).map(plan => ({
+        ...plan,
+        revision: Number.isInteger(plan.revision) && plan.revision > 0 ? plan.revision : 1,
+      }))
+      return parsed
+    }
   } catch {
     // Ignore malformed demo cache.
   }
