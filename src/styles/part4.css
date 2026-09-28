@@ -31,9 +31,9 @@ blockquote { margin: 15px 0; padding: 14px 16px; background: #f7e3e1; border-rad
 
 @media (max-width: 560px) {
   html, body, #root { width: 100%; max-width: 100%; min-height: 100%; overflow-x: hidden; overscroll-behavior-x: none; background: #fffaf6; }
-  body { min-height: 100dvh; background: #fffaf6; touch-action: pan-y; }
+  body { min-height: 100dvh; background: #fffaf6; touch-action: pan-y pinch-zoom; }
   input, textarea, select { font-size: 16px; }
-  .app-shell { width: 100%; max-width: 100svw; padding: 0; min-height: 100dvh; overflow-x: hidden; overscroll-behavior-x: none; touch-action: pan-y; background: #fffaf6; }
+  .app-shell { width: 100%; max-width: 100svw; padding: 0; min-height: 100dvh; overflow-x: hidden; overscroll-behavior-x: none; touch-action: pan-y pinch-zoom; background: #fffaf6; }
   .app-shell::before { content: ''; position: fixed; inset: 0 0 auto; height: calc(env(safe-area-inset-top, 0px) + 42px); z-index: 40; pointer-events: none; border: 0; background: linear-gradient(180deg, rgba(255,250,246,1) 0%, rgba(255,250,246,.94) 32%, rgba(255,250,246,.64) 62%, rgba(255,250,246,.22) 82%, rgba(255,250,246,0) 100%); -webkit-backdrop-filter: blur(2px); backdrop-filter: blur(2px); }
   .app-shell::after { content: ''; position: fixed; inset: auto 0 0; height: calc(env(safe-area-inset-bottom, 0px) + 46px); z-index: 18; pointer-events: none; border: 0; background: linear-gradient(0deg, rgba(255,250,246,.98) 0%, rgba(255,250,246,.82) 35%, rgba(255,250,246,.42) 68%, rgba(255,250,246,0) 100%); -webkit-backdrop-filter: blur(1.5px); backdrop-filter: blur(1.5px); }
   .phone-canvas { width: 100%; max-width: 100svw; min-height: 100vh; min-height: 100dvh; border: 0; border-radius: 0; box-shadow: none; overflow-x: hidden; background: transparent; }
@@ -52,4 +52,77 @@ blockquote { margin: 15px 0; padding: 14px 16px; background: #f7e3e1; border-rad
   .couple-cards { gap: 7px; }
   .person-card { padding-inline: 11px; }
   .work-options { grid-template-columns: repeat(3, 1fr); }
+}
+
+/* Shared mobile polish: preserve Together's soft editorial palette while
+   making the phone UI resilient to safe areas, text scaling and touch input. */
+:root {
+  --motion-quick: 140ms;
+  --motion-standard: 220ms;
+  --motion-enter: 320ms;
+  --ease-gentle: cubic-bezier(.2,.75,.25,1);
+  --safe-bottom: env(safe-area-inset-bottom, 0px);
+  scroll-padding-block: 1rem;
+}
+
+html { scroll-behavior: smooth; }
+body { -webkit-font-smoothing: antialiased; }
+button, a, input, textarea, select { touch-action: manipulation; }
+button, a { transition: color var(--motion-quick) ease, background-color var(--motion-quick) ease, border-color var(--motion-quick) ease, box-shadow var(--motion-standard) var(--ease-gentle), opacity var(--motion-quick) ease, transform var(--motion-quick) ease; }
+button:focus-visible, a:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-visible {
+  outline: 3px solid #a95860;
+  outline-offset: 3px;
+}
+input, textarea, select { min-height: 48px; }
+button { min-height: 44px; }
+.icon-button { min-width: 44px; min-height: 44px; }
+.bottom-nav button { min-height: 48px; }
+.page, .onboarding-screen, .auth-page { scroll-margin-top: env(safe-area-inset-top, 0px); }
+.app-shell { padding-top: max(26px, env(safe-area-inset-top, 0px)); padding-bottom: max(26px, env(safe-area-inset-bottom, 0px)); }
+.phone-canvas { min-height: calc(100dvh - max(52px, env(safe-area-inset-top, 0px) + env(safe-area-inset-bottom, 0px))); }
+.page, .onboarding-screen, .auth-page { min-height: max(100dvh, 100svh); }
+.page.with-nav { padding-bottom: calc(112px + env(safe-area-inset-bottom, 0px)); }
+.bottom-nav { padding-bottom: max(6px, env(safe-area-inset-bottom, 0px)); }
+.bottom-nav button.active { box-shadow: inset 0 0 0 1px rgba(159, 100, 95, .1); }
+.primary-button:active, .secondary-button:active, .choice-card:active, .quick-action:active, .plan-card:active, .insight-card:active { transform: scale(.985); }
+.choice-card, .quick-action, .plan-card, .insight-card, .person-card, .feature-card { animation: together-rise var(--motion-enter) var(--ease-gentle) both; }
+.choice-card:nth-child(2), .quick-action:nth-child(2), .plan-card:nth-child(2), .feature-card:nth-child(2) { animation-delay: 35ms; }
+.choice-card:nth-child(3), .quick-action:nth-child(3), .plan-card:nth-child(3), .feature-card:nth-child(3) { animation-delay: 70ms; }
+@keyframes together-rise { from { opacity: .72; transform: translateY(7px); } to { opacity: 1; transform: translateY(0); } }
+
+@media (min-width: 561px) {
+  .app-shell { padding-inline: 24px; }
+  .page, .auth-page { padding-inline: clamp(24px, 5vw, 34px); }
+  .bottom-nav { bottom: 16px; }
+}
+
+@media (max-width: 560px) {
+  .app-shell { padding-top: 0; padding-bottom: 0; }
+  .phone-canvas { min-height: 100dvh; }
+  .page.with-nav { padding-bottom: calc(124px + env(safe-area-inset-bottom, 0px)); }
+  .bottom-nav { left: 12px; right: 12px; bottom: max(8px, env(safe-area-inset-bottom, 0px)); height: 72px; padding-bottom: 6px; }
+  .bottom-nav button { font-size: 10px; }
+  .toast { bottom: calc(96px + env(safe-area-inset-bottom, 0px)); }
+  .week-grid-wrap { overflow-x: auto; overscroll-behavior-inline: contain; }
+  .week-columns { min-width: 310px; }
+  .calendar-legend { flex-wrap: wrap; row-gap: 8px; margin-left: 42px; }
+  .feature-card small, .quick-action span, .plan-main > span, .settings-card small { font-size: max(10px, .72rem); }
+}
+
+@media (max-width: 360px) {
+  .bottom-nav { left: 8px; right: 8px; }
+  .bottom-nav button { font-size: 9px; }
+  .week-grid-wrap { grid-template-columns: 32px 1fr; }
+  .calendar-legend { margin-left: 34px; }
+}
+
+@media (orientation: landscape) and (max-height: 500px) {
+  .onboarding-screen, .auth-page { min-height: 100dvh; }
+  .onboarding-screen { padding-top: calc(24px + env(safe-area-inset-top, 0px)); }
+  .onboarding-copy h1 { margin-top: 18px; }
+  .bottom-nav { position: sticky; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { scroll-behavior: auto !important; animation-duration: .01ms !important; animation-iteration-count: 1 !important; transition-duration: .01ms !important; }
 }

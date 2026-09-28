@@ -1,5 +1,5 @@
-import { useRef, useState } from 'react'
-import { ArrowRight, BriefcaseBusiness, CalendarDays, ChevronLeft, ChevronRight, Clock3, Coffee, Copy, Heart, MapPin, Plus, RefreshCcw, Settings, Sparkles, Sun, Zap, Camera, Laptop, Home, Clock } from 'lucide-react'
+import { useEffect, useRef, useState } from 'react'
+import { ArrowRight, BriefcaseBusiness, CalendarDays, ChevronLeft, ChevronRight, Clock3, Coffee, Copy, Share2, Heart, MapPin, Plus, RefreshCcw, Settings, Sparkles, Sun, Zap, Camera, Laptop, Home, Clock } from 'lucide-react'
 import type { CommonProps } from './appTypes'
 import type { CoupleState, DailyState, SharedPlan, WorkSchedule, WorkType } from './types'
 import { AppHeader, Avatar, Page } from './UI'
@@ -7,7 +7,7 @@ import { overlapSuggestion, workOccursOn, workOnDate } from './lib/insights'
 import { addDaysISO, localISODate, weekStartISO } from './lib/dates'
 import { blobToDataUrl, compressAvatar } from './lib/image'
 import { isSupabaseConfigured, supabase } from './lib/supabase'
-import { saveRemoteProfile } from './lib/remoteStore'
+import { rotateRemoteInvite, saveRemoteProfile } from './lib/remoteStore'
 import { resetDemoState } from './lib/demoStore'
 
 const todayDate=localISODate
@@ -78,5 +78,93 @@ export function Week({state,open,onPickSuggestion}:CommonProps&{onPickSuggestion
 }
 function WeekGrid({state,days}:{state:CoupleState;days:string[]}){const hours=[8,10,12,14,16,18,20,22];const style=(start:string,end:string)=>{const[sh,sm]=start.split(':').map(Number),[eh,em]=end.split(':').map(Number),startM=sh*60+sm,endM=eh*60+em,top=((startM-480)/840)*100,height=Math.max(3,((endM-startM)/840)*100);return{top:`${Math.max(0,top)}%`,height:`${Math.min(100-Math.max(0,top),height)}%`}};return <div className="week-grid-wrap"><div className="time-axis">{hours.map(h=><span key={h} style={{top:`${((h-8)/14)*100}%`}}>{String(h).padStart(2,'0')}:00</span>)}</div><div className="week-columns">{days.map(day=><div className="week-column" key={day}>{hours.map(h=><i key={h} style={{top:`${((h-8)/14)*100}%`}}/>)}{state.availability.filter(x=>x.date===day).map(b=><span key={b.id} className={`calendar-block ${b.userId===state.me.id?'me':'partner'} ${b.status}`} style={style(b.start,b.end)}/>)}{state.workSchedules.filter(w=>w.type!=='off'&&workOccursOn(w,day)).map(w=><span key={`work-${w.id}`} className={`calendar-block work ${w.userId===state.me.id?'me':'partner'}`} style={style(w.start,w.end)}/>)}</div>)}</div></div>}
 
-export function Us({state,updateState,open,notify}:CommonProps){const [privacyExpanded,setPrivacyExpanded]=useState(false);const fileRef=useRef<HTMLInputElement>(null);const updateAvatar=async(file?:File)=>{if(!file)return;try{const blob=await compressAvatar(file);let avatarUrl=await blobToDataUrl(blob),avatarPath=state.me.avatarPath;if(supabase){const{data:userData}=await supabase.auth.getUser(),userId=userData.user?.id;if(!userId||userId!==state.me.id)throw new Error('Tài khoản đã thay đổi. Hãy tải lại hồ sơ.');{avatarPath=`${userId}/avatar-${Date.now()}.webp`;const{error}=await supabase.storage.from('avatars').upload(avatarPath,blob,{contentType:'image/webp',upsert:false});if(error)throw error;const signed=await supabase.storage.from('avatars').createSignedUrl(avatarPath,3600);avatarUrl=signed.data?.signedUrl??avatarUrl;await saveRemoteProfile(state.me.displayName,avatarPath,state.me.id)}}updateState(d=>{d.me.avatarUrl=avatarUrl;d.me.avatarPath=avatarPath});notify('Đã đổi ảnh đại diện.')}catch(e){notify(e instanceof Error?e.message:'Không thể đổi ảnh.','normal')}};const my=state.checkins.find(x=>x.userId===state.me.id&&x.weekStart===getWeekStart()),partner=state.checkins.find(x=>x.userId===state.partner.id&&x.weekStart===getWeekStart());return <Page className="us-page with-nav"><AppHeader state={state}/><div className="us-hero"><div className="couple-avatar-stack"><Avatar profile={state.me} size="lg"/><Avatar profile={state.partner} size="lg"/></div><h1>{state.name}</h1><p>Hai cuộc sống khác nhau. Một nhịp chung.</p></div><section className="settings-card"><button onClick={()=>fileRef.current?.click()}><Camera size={18}/><div><strong>Ảnh đại diện của bạn</strong><small>Tải ảnh mới từ thiết bị</small></div><ChevronRight size={18}/></button><input hidden ref={fileRef} type="file" accept="image/*" onChange={e=>updateAvatar(e.target.files?.[0])}/><button onClick={()=>open('daily','us')}><Zap size={18}/><div><strong>Trạng thái hôm nay</strong><small>Energy + closeness</small></div><ChevronRight size={18}/></button><button onClick={()=>open('checkin','us')}><Heart size={18}/><div><strong>Weekly check-in</strong><small>{my?'Bạn đã trả lời tuần này':'Chưa trả lời tuần này'}</small></div><ChevronRight size={18}/></button><button onClick={()=>setPrivacyExpanded(value=>!value)}><Settings size={18}/><div><strong>Quyền riêng tư</strong><small>Couple-only · không public profile</small></div><ChevronRight size={18}/></button></section>{privacyExpanded&&<section className="privacy-note"><Heart size={16}/> Chỉ thành viên trong couple đọc được lịch, năng lượng và kế hoạch. Check-in chỉ hiện khi cả hai cùng trả lời. Ảnh được lưu trong private Storage.</section>}<section className="reveal-card"><span className="eyebrow">Check-in tuần này</span><h3>Mỗi người cảm thấy thế nào?</h3>{my&&partner?<div className="checkin-reveal"><Feeling feeling={my.feeling} name={state.me.displayName}/><Feeling feeling={partner.feeling} name={state.partner.displayName}/></div>:<p>Chỉ reveal khi cả hai đã trả lời. Không tạo áp lực trả lời giống nhau.</p>}</section><div className="invite-mini"><div><span className="eyebrow">Mã couple</span><strong>{state.inviteCode}</strong></div><button className="icon-button" onClick={()=>navigator.clipboard?.writeText(state.inviteCode)}><Copy size={18}/></button></div>{!isSupabaseConfigured&&<button className="text-button danger" onClick={()=>{resetDemoState();localStorage.removeItem('together-onboarded');location.reload()}}><RefreshCcw size={15}/> Reset bản demo</button>}</Page>}
+export function Us({state,updateState,open,notify}:CommonProps){
+  const [inviteNow,setInviteNow]=useState(Date.now)
+  const [inviteOwner,setInviteOwner]=useState<string|null>(null)
+  const [inviteBusy,setInviteBusy]=useState(false)
+  const [inviteFeedback,setInviteFeedback]=useState('')
+  const inviteLock=useRef(false)
+  const latestInviteState=useRef(state)
+  latestInviteState.current=state
+  const inviteMounted=useRef(true)
+  const waiting=state.partner.id==='waiting-partner'
+  const expiresAt=Date.parse(state.inviteExpiresAt??'')
+  const activeInvite=waiting&&Boolean(state.inviteCode)&&expiresAt>inviteNow
+  const ownerKey=JSON.stringify([state.id,state.me.id])
+  const canRotate=isSupabaseConfigured&&waiting&&inviteOwner===ownerKey
+  const touchTarget={minHeight:44,minWidth:44}
+  useEffect(()=>{inviteMounted.current=true;return()=>{inviteMounted.current=false}},[])
+  useEffect(()=>{
+    setInviteNow(Date.now());setInviteFeedback('')
+    if(!waiting||!Number.isFinite(expiresAt))return
+    const refresh=()=>setInviteNow(Date.now())
+    const timer=window.setTimeout(refresh,Math.min(2147483647,Math.max(0,expiresAt-Date.now()+1)))
+    window.addEventListener('focus',refresh)
+    document.addEventListener('visibilitychange',refresh)
+    return()=>{window.clearTimeout(timer);window.removeEventListener('focus',refresh);document.removeEventListener('visibilitychange',refresh)}
+  },[waiting,expiresAt,state.inviteCode])
+  useEffect(()=>{
+    let alive=true
+    setInviteOwner(null)
+    if(supabase&&waiting){
+      void supabase.from('couple_members').select('role').eq('couple_id',state.id).eq('user_id',state.me.id).maybeSingle()
+        .then(({data,error})=>{if(alive&&!error&&data?.role==='owner')setInviteOwner(ownerKey)},()=>{/* fail closed: keep renewal hidden */})
+    }
+    return()=>{alive=false}
+  },[ownerKey,waiting,state.id,state.me.id])
+  const currentInviteUrl=()=>{
+    const current=latestInviteState.current
+    if(current.partner.id!=='waiting-partner'||!current.inviteCode||!(Date.parse(current.inviteExpiresAt??'')>Date.now())){
+      setInviteNow(Date.now());setInviteFeedback('Lời mời không còn hiệu lực. Hãy tạo lời mời mới.');return null
+    }
+    const url=new URL(import.meta.env.BASE_URL,window.location.origin)
+    url.searchParams.set('invite',current.inviteCode)
+    return url.toString()
+  }
+  const sendInvite=async(share:boolean)=>{
+    if(inviteLock.current)return
+    const url=currentInviteUrl()
+    if(!url)return
+    inviteLock.current=true;setInviteBusy(true);setInviteFeedback('')
+    try{
+      if(share&&navigator.share){
+        await navigator.share({title:'Together',text:'Cùng mình giữ nhịp mỗi ngày nhé',url})
+      }else{
+        if(!navigator.clipboard?.writeText)throw new Error('Clipboard unavailable')
+        await navigator.clipboard.writeText(url)
+        if(inviteMounted.current)setInviteFeedback('Đã sao chép link mời.')
+      }
+    }catch(error){
+      if(inviteMounted.current&&!(error instanceof DOMException&&error.name==='AbortError'))setInviteFeedback('Không thể chia sẻ tự động. Bạn có thể chọn và sao chép mã mời đang hiển thị.')
+    }finally{inviteLock.current=false;if(inviteMounted.current)setInviteBusy(false)}
+  }
+  const renewInvite=async()=>{
+    if(!canRotate||inviteLock.current)return
+    const coupleId=state.id,userId=state.me.id
+    inviteLock.current=true;setInviteBusy(true);setInviteFeedback('')
+    try{
+      const invite=await rotateRemoteInvite()
+      const current=latestInviteState.current
+      if(!inviteMounted.current||current.id!==coupleId||current.me.id!==userId||current.partner.id!=='waiting-partner')return
+      updateState(d=>{if(d.id===coupleId&&d.me.id===userId&&d.partner.id==='waiting-partner'){d.inviteCode=invite.code;d.inviteExpiresAt=invite.expiresAt}})
+      setInviteNow(Date.now());setInviteFeedback('Đã tạo lời mời mới. Mã cũ không còn hiệu lực.')
+    }catch{if(inviteMounted.current)setInviteFeedback('Chưa tạo được lời mời mới. Hãy tải lại để kiểm tra kết nối và quyền chủ sở hữu.')}
+    finally{inviteLock.current=false;if(inviteMounted.current)setInviteBusy(false)}
+  }
+const [privacyExpanded,setPrivacyExpanded]=useState(false);const fileRef=useRef<HTMLInputElement>(null);const updateAvatar=async(file?:File)=>{if(!file)return;try{const blob=await compressAvatar(file);let avatarUrl=await blobToDataUrl(blob),avatarPath=state.me.avatarPath;if(supabase){const{data:userData}=await supabase.auth.getUser(),userId=userData.user?.id;if(!userId||userId!==state.me.id)throw new Error('Tài khoản đã thay đổi. Hãy tải lại hồ sơ.');{avatarPath=`${userId}/avatar-${Date.now()}.webp`;const{error}=await supabase.storage.from('avatars').upload(avatarPath,blob,{contentType:'image/webp',upsert:false});if(error)throw error;const signed=await supabase.storage.from('avatars').createSignedUrl(avatarPath,3600);avatarUrl=signed.data?.signedUrl??avatarUrl;await saveRemoteProfile(state.me.displayName,avatarPath,state.me.id)}}updateState(d=>{d.me.avatarUrl=avatarUrl;d.me.avatarPath=avatarPath});notify('Đã đổi ảnh đại diện.')}catch(e){notify(e instanceof Error?e.message:'Không thể đổi ảnh.','normal')}};const my=state.checkins.find(x=>x.userId===state.me.id&&x.weekStart===getWeekStart()),partner=state.checkins.find(x=>x.userId===state.partner.id&&x.weekStart===getWeekStart());return <Page className="us-page with-nav"><AppHeader state={state}/><div className="us-hero"><div className="couple-avatar-stack"><Avatar profile={state.me} size="lg"/><Avatar profile={state.partner} size="lg"/></div><h1>{state.name}</h1><p>Hai cuộc sống khác nhau. Một nhịp chung.</p></div><section className="settings-card"><button onClick={()=>fileRef.current?.click()}><Camera size={18}/><div><strong>Ảnh đại diện của bạn</strong><small>Tải ảnh mới từ thiết bị</small></div><ChevronRight size={18}/></button><input hidden ref={fileRef} type="file" accept="image/*" onChange={e=>updateAvatar(e.target.files?.[0])}/><button onClick={()=>open('daily','us')}><Zap size={18}/><div><strong>Trạng thái hôm nay</strong><small>Energy + closeness</small></div><ChevronRight size={18}/></button><button onClick={()=>open('checkin','us')}><Heart size={18}/><div><strong>Weekly check-in</strong><small>{my?'Bạn đã trả lời tuần này':'Chưa trả lời tuần này'}</small></div><ChevronRight size={18}/></button><button onClick={()=>setPrivacyExpanded(value=>!value)}><Settings size={18}/><div><strong>Quyền riêng tư</strong><small>Couple-only · không public profile</small></div><ChevronRight size={18}/></button></section>{privacyExpanded&&<section className="privacy-note"><Heart size={16}/> Chỉ thành viên trong couple đọc được lịch, năng lượng và kế hoạch. Check-in chỉ hiện khi cả hai cùng trả lời. Ảnh được lưu trong private Storage.</section>}<section className="reveal-card"><span className="eyebrow">Check-in tuần này</span><h3>Mỗi người cảm thấy thế nào?</h3>{my&&partner?<div className="checkin-reveal"><Feeling feeling={my.feeling} name={state.me.displayName}/><Feeling feeling={partner.feeling} name={state.partner.displayName}/></div>:<p>Chỉ reveal khi cả hai đã trả lời. Không tạo áp lực trả lời giống nhau.</p>}</section><section className="invite-card" aria-labelledby="us-invite-heading" aria-busy={inviteBusy}>
+  <span className="eyebrow" id="us-invite-heading">Kết nối của hai người</span>
+  {!waiting?<p>Hai bạn đã kết nối. Lời mời cũ không còn dùng được.</p>:activeInvite?<>
+    <label htmlFor="us-invite-code">Mã mời dùng một lần</label>
+    <input id="us-invite-code" readOnly value={state.inviteCode} onFocus={event=>event.currentTarget.select()} style={{...touchTarget,width:'100%',minWidth:0,fontSize:16}}/>
+    <p>Hết hạn lúc <time dateTime={state.inviteExpiresAt}>{new Intl.DateTimeFormat('vi-VN',{dateStyle:'medium',timeStyle:'short'}).format(new Date(expiresAt))}</time>. Chỉ gửi cho người bạn muốn kết nối.</p>
+    <div style={{display:'flex',flexWrap:'wrap',gap:8}}>
+      <button type="button" className="primary-button" style={touchTarget} disabled={inviteBusy} onClick={()=>void sendInvite(true)}><Share2 size={18} aria-hidden="true"/> Chia sẻ lời mời</button>
+      <button type="button" className="secondary-button" style={touchTarget} disabled={inviteBusy} onClick={()=>void sendInvite(false)}><Copy size={18} aria-hidden="true"/> Sao chép link</button>
+    </div>
+  </>:<p role="status">Lời mời đã hết hạn hoặc không còn hiệu lực. Mã cũ đã được ẩn.</p>}
+  {canRotate&&<><button type="button" className="secondary-button" style={touchTarget} disabled={inviteBusy} onClick={()=>void renewInvite()}><RefreshCcw size={18} aria-hidden="true"/>{inviteBusy?'Đang xử lý…':'Tạo lời mời mới'}</button><p>Tạo mới sẽ vô hiệu hóa lời mời trước đó.</p></>}
+  {waiting&&!canRotate&&isSupabaseConfigured&&<p>Chỉ chủ sở hữu không gian có thể tạo lại lời mời.</p>}
+  {!isSupabaseConfigured&&<p>Đây là bản demo trên thiết bị. Kết nối người thật cần đăng nhập.</p>}
+  <p role="status" aria-live="polite">{inviteFeedback}</p>
+</section>{!isSupabaseConfigured&&<button className="text-button danger" onClick={()=>{resetDemoState();localStorage.removeItem('together-onboarded');location.reload()}}><RefreshCcw size={15}/> Reset bản demo</button>}</Page>}
 function Feeling({feeling,name}:{feeling:1|2|3;name:string}){const map={1:['Quá ít','☹'],2:['Vừa đủ','☺'],3:['Quá nhiều','◔']} as const;return <div className={`feeling-badge feeling-${feeling}`}><span>{map[feeling][1]}</span><div><strong>{name}</strong><small>{map[feeling][0]}</small></div></div>}

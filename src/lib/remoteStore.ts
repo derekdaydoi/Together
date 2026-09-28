@@ -58,7 +58,7 @@ export async function loadRemoteState(): Promise<CoupleState | null> {
 
   const coupleId = membership.couple_id as string
   const [coupleRes, membersRes, dailyRes, workRes, availabilityRes, plansRes, checkinsRes] = await Promise.all([
-    sb.from('couples').select('id,name,invite_code').eq('id', coupleId).single(),
+    sb.from('couples').select('id,name,invite_code,invite_expires_at').eq('id', coupleId).single(),
     sb.from('couple_members').select('user_id').eq('couple_id', coupleId),
     sb.from('daily_states').select('*').eq('couple_id', coupleId),
     sb.from('work_schedules').select('*').eq('couple_id', coupleId),
@@ -110,6 +110,7 @@ export async function loadRemoteState(): Promise<CoupleState | null> {
     id: coupleRes.data.id,
     name: coupleRes.data.name,
     inviteCode: coupleRes.data.invite_code,
+    inviteExpiresAt: coupleRes.data.invite_expires_at,
     me: { id: meRow.id, displayName: meRow.display_name, avatarPath: meRow.avatar_path ?? undefined, avatarUrl: meAvatar },
     partner: { id: partnerRow.id, displayName: partnerRow.display_name, avatarPath: partnerRow.avatar_path ?? undefined, avatarUrl: partnerAvatar },
     dailyStates,
@@ -150,6 +151,15 @@ export async function saveRemoteWork(coupleId: string, input: WorkSchedule) {
   const { data, error } = await sb.from('work_schedules').insert({ couple_id: coupleId, user_id: input.userId, starts_at: localTimestamp(input.date, input.start), ends_at: localTimestamp(input.date, input.end), work_type: input.type, note: input.note ?? null, repeats_weekly: Boolean(input.repeatsWeekly) }).select('id').single()
   if (error) throw error
   return data.id as string
+}
+
+export async function rotateRemoteInvite() {
+  const sb = client()
+  const { data, error } = await sb.rpc('rotate_couple_invite')
+  if (error) throw error
+  const row = Array.isArray(data) ? data[0] : data
+  if (!row?.invite_code) throw new Error('Không lấy được mã mời mới.')
+  return { code: row.invite_code as string, expiresAt: row.invite_expires_at as string }
 }
 
 // A signed-in user without a couple still needs their own remote profile on

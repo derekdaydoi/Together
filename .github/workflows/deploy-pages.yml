@@ -51,15 +51,18 @@ jobs:
           rm -rf assets docs
           cp -R dist/assets ./assets
           cp dist/index.html ./index.html
-          cp dist/icon.svg ./icon.svg
           cp dist/manifest.webmanifest ./manifest.webmanifest
+          for icon in icon.svg favicon.png apple-touch-icon.png icon-192.png icon-512.png icon-192-maskable.png icon-512-maskable.png; do
+            test -f "dist/$icon"
+            cp "dist/$icon" "./$icon"
+          done
           touch .nojekyll
           mkdir -p docs
           cp -R dist/* docs/
           touch docs/.nojekyll
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add -A index.html assets icon.svg manifest.webmanifest .nojekyll docs
+          git add -A index.html assets icon.svg favicon.png apple-touch-icon.png icon-192.png icon-512.png icon-192-maskable.png icon-512-maskable.png manifest.webmanifest .nojekyll docs
           if git diff --cached --quiet; then
             echo "Compiled web output already current."
           else

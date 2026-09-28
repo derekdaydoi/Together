@@ -13,14 +13,15 @@ class AppErrorBoundary extends Component<{children:ReactNode},{failed:boolean}> 
   }
 }
 
-// Together behaves as an app surface: vertical scrolling stays enabled, while
-// pinch/multi-touch zoom is blocked to avoid iOS PWA viewport drifting sideways.
-const preventGesture=(event:Event)=>event.preventDefault()
-const preventMultiTouch=(event:TouchEvent)=>{if(event.touches.length>1)event.preventDefault()}
-document.addEventListener('gesturestart',preventGesture,{passive:false})
-document.addEventListener('gesturechange',preventGesture,{passive:false})
-document.addEventListener('gestureend',preventGesture,{passive:false})
-document.addEventListener('touchmove',preventMultiTouch,{passive:false})
+// Preserve browser and assistive-technology pinch zoom. CSS contains sideways
+// overflow; intercepting multi-touch gestures would make content inaccessible.
+if (import.meta.env.PROD && 'serviceWorker' in navigator) {
+  window.addEventListener('load', () => {
+    void navigator.serviceWorker.register(`${import.meta.env.BASE_URL}sw.js`, {
+      scope: import.meta.env.BASE_URL,
+    }).catch(error => console.warn('Together offline support unavailable', error))
+  })
+}
 
 const root=document.getElementById('root')
 if(!root)throw new Error('Missing #root mount node')

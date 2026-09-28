@@ -14,6 +14,7 @@ export type CoupleState = {
   id: string
   name: string
   inviteCode: string
+  inviteExpiresAt?: string
   me: Profile
   partner: Profile
   dailyStates: DailyState[]

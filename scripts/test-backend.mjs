@@ -18,12 +18,16 @@ async function test(name, run) {
   try { await run(); passed++; console.log(`PASS ${name}`) }
   catch (error) { failed++; console.error(`FAIL ${name}: ${error.message}`) }
 }
-async function denied(sql, code) {
-  await assert.rejects(db.exec(sql), error => !code || error.code === code)
+async function denied(sql, code, params) {
+  await assert.rejects(params ? db.query(sql, params) : db.exec(sql), error => !code || error.code === code)
 }
 async function asUser(id) {
   await db.exec(`reset role; set role authenticated; select set_config('request.jwt.claim.sub', '${id}', false)`)
 }
+const E = '00000000-0000-0000-0000-000000000005'
+const F = '00000000-0000-0000-0000-000000000006'
+const G = '00000000-0000-0000-0000-000000000007'
+const I = '00000000-0000-0000-0000-000000000009'
 const A = '00000000-0000-0000-0000-000000000001'
 const B = '00000000-0000-0000-0000-000000000002'
 const C = '00000000-0000-0000-0000-000000000003'
@@ -31,6 +35,10 @@ const D = '00000000-0000-0000-0000-000000000004'
 const X = '10000000-0000-0000-0000-000000000001'
 const Y = '10000000-0000-0000-0000-000000000002'
 const Z = '10000000-0000-0000-0000-000000000003'
+const PAIRED_LEGACY_OWNER = '00000000-0000-0000-0000-000000000090'
+const PAIRED_LEGACY_PARTNER = '00000000-0000-0000-0000-000000000091'
+const PAIRED_LEGACY_COUPLE = '10000000-0000-0000-0000-000000000095'
+const inviteMigrationFile = '20260929023000_secure_one_time_couple_invites.sql'
 const P = '20000000-0000-0000-0000-000000000001'
 const legacyPlanId = '20000000-0000-0000-0000-000000000096'
 const plan = `insert into public.plans(id,couple_id,created_by,title,starts_at,ends_at,plan_type,status)
@@ -53,6 +61,11 @@ try {
     -- Only pgcrypto randomness is stubbed: security/authorization SQL is unchanged.
     create function public.gen_random_bytes(integer) returns bytea language sql volatile as
       $$ select decode(replace(gen_random_uuid()::text,'-',''),'hex') $$;
+    create schema if not exists extensions;
+    create function extensions.gen_random_bytes(integer) returns bytea language sql volatile as
+      $$ select decode(replace(gen_random_uuid()::text,'-',''),'hex') $$;
+    grant usage on schema extensions to public;
+    grant execute on function extensions.gen_random_bytes(integer) to public;
   `)
   const schema = await readFile(resolve(root, 'supabase/schema.sql'), 'utf8')
   await db.exec(schema.replace('create extension if not exists pgcrypto;', ''))
@@ -69,9 +82,17 @@ try {
           ('${legacyPlanId}','10000000-0000-0000-0000-000000000096','00000000-0000-0000-0000-000000000096',
           'Before revision rollout','2026-09-28 12:00Z','2026-09-28 13:00Z','hard','confirmed');`)
     }
+    if (file === inviteMigrationFile && !baseline) {
+      // Seed a genuinely pre-migration, already-paired couple so the invite
+      // migration's backfill is exercised instead of only its new-row defaults.
+      await db.exec(`insert into auth.users(id) values ('${PAIRED_LEGACY_OWNER}'),('${PAIRED_LEGACY_PARTNER}');
+        insert into public.couples(id,created_by) values ('${PAIRED_LEGACY_COUPLE}','${PAIRED_LEGACY_OWNER}');
+        insert into public.couple_members(couple_id,user_id,role)
+          values ('${PAIRED_LEGACY_COUPLE}','${PAIRED_LEGACY_PARTNER}','member');`)
+    }
     await db.exec(await readFile(resolve(root, 'supabase/migrations', file), 'utf8'))
   }
-  await db.exec(`insert into auth.users(id) values ('${A}'),('${B}'),('${C}'),('${D}');
+  await db.exec(`insert into auth.users(id) values ('${A}'),('${B}'),('${C}'),('${D}'),('${E}'),('${F}'),('${G}'),('${I}');
     insert into public.couples(id,created_by) values ('${X}','${A}'),('${Y}','${C}');
     insert into public.couple_members(couple_id,user_id) values ('${X}','${B}');`)
 
@@ -93,6 +114,77 @@ try {
     const result = await db.query(`insert into public.couples(id,created_by) values ('${Z}','${D}') returning id`)
     assert.equal(result.rows[0].id, Z)
   })
+  if (!baseline && migrations.includes(inviteMigrationFile)) {
+    await test('invite migration backfills existing paired couples as consumed with an expiry', async () => {
+      await db.exec('reset role')
+      const result = await db.query(`select invite_expires_at is not null as has_expiry,
+        invite_used_at is not null as consumed from public.couples where id='${PAIRED_LEGACY_COUPLE}'`)
+      assert.deepEqual(result.rows, [{ has_expiry: true, consumed: true }])
+    })
+  }
+  if (!baseline) {
+    let inviteCode
+    let inviteConsumedAt
+    await test('owner can rotate a high-entropy invitation under authenticated SQL role', async () => {
+      await asUser(D)
+      const result = await db.query('select * from public.rotate_couple_invite()')
+      assert.equal(result.rows.length, 1)
+      inviteCode = result.rows[0].invite_code
+      assert.match(inviteCode, /^[A-F0-9]{32}$/)
+      assert.ok(new Date(result.rows[0].invite_expires_at).getTime() > Date.now())
+    })
+    await test('prospective authenticated member can redeem an unexpired invitation once', async () => {
+      await asUser(E)
+      const result = await db.query('select public.redeem_couple_invite($1) as couple_id', [inviteCode])
+      assert.deepEqual(result.rows, [{ couple_id: Z }])
+      assert.deepEqual((await db.query(`select role from public.couple_members where couple_id='${Z}' and user_id='${E}'`)).rows,
+        [{ role: 'member' }])
+      const consumed = await db.query(`select invite_used_at
+        from public.couples where id='${Z}'`)
+      inviteConsumedAt = consumed.rows[0].invite_used_at
+      assert.ok(inviteConsumedAt)
+    })
+    await test('consumed invitation cannot be redeemed by a second authenticated user', async () => {
+      // Removing the invitee must not reopen a token that has been consumed.
+      await db.exec(`reset role; delete from public.couple_members
+        where couple_id='${Z}' and user_id='${E}'`)
+      assert.equal((await db.query(`select count(*)::int as members from public.couple_members where couple_id='${Z}'`)).rows[0].members, 1)
+      assert.equal((await db.query(`select invite_used_at from public.couples where id='${Z}'`)).rows[0].invite_used_at, inviteConsumedAt)
+      await asUser(F)
+      await denied('select public.redeem_couple_invite($1)', '22023', [inviteCode])
+      assert.equal((await db.query(`select 1 from public.couple_members where user_id='${F}'`)).rows.length, 0)
+    })
+    await test('rotating an invitation invalidates its previous code', async () => {
+      await asUser(C)
+      const previous = (await db.query('select * from public.rotate_couple_invite()')).rows[0].invite_code
+      const current = (await db.query('select * from public.rotate_couple_invite()')).rows[0].invite_code
+      assert.notEqual(current, previous)
+      await asUser(G)
+      await denied('select public.redeem_couple_invite($1)', '22023', [previous])
+      assert.equal((await db.query(`select 1 from public.couple_members where user_id='${G}'`)).rows.length, 0)
+    })
+    await test('expired invitation is rejected for an authenticated prospective member', async () => {
+      await asUser(C)
+      const rotated = await db.query('select * from public.rotate_couple_invite()')
+      const expiredCode = rotated.rows[0].invite_code
+      await db.exec(`reset role; update public.couples set invite_expires_at=now()-interval '1 second' where id='${Y}'`)
+      await asUser(G)
+      await denied('select public.redeem_couple_invite($1)', '22023', [expiredCode])
+      assert.equal((await db.query(`select 1 from public.couple_members where user_id='${G}'`)).rows.length, 0)
+    })
+    await test('only the owner may rotate an invitation', async () => {
+      await asUser(B)
+      await denied('select * from public.rotate_couple_invite()', '42501')
+    })
+    await test('redeem rejects a third member even if an outstanding token is restored', async () => {
+      // Simulate a stale/inconsistent outstanding code on a full couple so
+      // this exercises the RPC's member-count guard, beyond the table trigger.
+      await db.exec(`reset role; update public.couples set invite_used_at=null where id='${Z}'`)
+      await asUser(I)
+      await denied('select public.redeem_couple_invite($1)', '22023', [inviteCode])
+      assert.equal((await db.query(`select 1 from public.couple_members where user_id='${I}'`)).rows.length, 0)
+    })
+  }
   await test('outsider cannot read another couple or its membership', async () => {
     await asUser(C)
     assert.equal((await db.query(`select id from public.couples where id='${X}'`)).rows.length, 0)
@@ -119,8 +211,10 @@ try {
     await denied('select * from public.plans', '42501')
   })
   await test('third membership rejected even for privileged join service', async () => {
+    await asUser(I)
+    await denied(`insert into public.couple_members(couple_id,user_id) values ('${X}','${I}')`, '42501')
     await db.exec('reset role')
-    await denied(`insert into public.couple_members(couple_id,user_id) values ('${X}','${C}')`)
+    await denied(`insert into public.couple_members(couple_id,user_id) values ('${X}','${I}')`, 'P0001')
   })
   await test('users cannot forge partner state or change its ownership', async () => {
     await asUser(A)
