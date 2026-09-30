@@ -3,29 +3,49 @@
    disturbing the scheduling layout rules that already pass regression tests. */
 
 @media (max-width: 560px) {
-  /* iOS: own only the real safe-area instead of painting a 40px blurred veil.
-     backdrop-filter on a fixed pseudo element can create a visible compositor
-     seam while scrolling in Safari/PWA. */
-  .app-shell::before {
-    height: env(safe-area-inset-top, 0px);
-    background: #fffaf6;
-    -webkit-backdrop-filter: none;
-    backdrop-filter: none;
-    box-shadow: none;
+  /* iOS owns the system chrome. Do not draw faux top/bottom bars.
+     Important content uses the browser-provided safe-area insets instead. */
+  .app-shell::before,
+  .app-shell::after {
+    content: none;
+    display: none;
   }
 
-  .app-shell::after {
-    height: env(safe-area-inset-bottom, 0px);
-    background: #fffaf6;
-    -webkit-backdrop-filter: none;
-    backdrop-filter: none;
-    box-shadow: none;
+  .page {
+    padding-inline: 20px;
+    padding-top: max(24px, env(safe-area-inset-top, 0px));
+    padding-bottom: max(32px, env(safe-area-inset-bottom, 0px));
+  }
+
+  .onboarding-screen {
+    padding-top: max(58px, env(safe-area-inset-top, 0px));
+    padding-bottom: max(24px, env(safe-area-inset-bottom, 0px));
+  }
+
+  .auth-page {
+    padding-top: max(24px, env(safe-area-inset-top, 0px));
+    padding-bottom: max(28px, env(safe-area-inset-bottom, 0px));
+  }
+
+  .page.with-nav {
+    padding-bottom: max(124px, calc(96px + env(safe-area-inset-bottom, 0px)));
   }
 
   /* Slightly more native iOS rhythm: larger readable type, 52–56px controls,
      but keep density high enough for a small-screen couple app. */
-  .page {
-    padding-inline: 20px;
+  .brand.compact .brand-word {
+    font-size: 36px;
+    line-height: .94;
+  }
+
+  .signature {
+    font-size: 11px;
+  }
+
+  .signature.compact {
+    font-size: 11.5px;
+    padding-top: 26px;
+    opacity: .9;
   }
 
   .top-back {
