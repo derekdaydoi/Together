@@ -6,6 +6,8 @@ import ts from 'typescript'
 
 const source = await readFile(new URL('../src/App.tsx', import.meta.url), 'utf8')
 const setupSource = await readFile(new URL('../src/screens-setup.tsx', import.meta.url), 'utf8')
+const zodiacSource = await readFile(new URL('../src/zodiac.ts', import.meta.url), 'utf8')
+const uiSource = await readFile(new URL('../src/UI.tsx', import.meta.url), 'utf8')
 const ast = ts.createSourceFile('App.tsx', source, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX)
 
 let startWithoutEmail
@@ -50,6 +52,14 @@ function harness() {
 test('zero-email architecture contains no OTP or Magic Link fallback', () => {
   assert.doesNotMatch(source, /signInWithOtp|sendMagicLink|authEmail|emailMode|Gửi Magic Link|Magic Link/)
   assert.match(source, /signInAnonymously/)
+})
+
+test('profile onboarding uses 12 Vietnamese zodiac avatars instead of initial-letter placeholders', () => {
+  assert.match(setupSource, /ZODIAC_OPTIONS/)
+  assert.doesNotMatch(setupSource, /type="file"/)
+  assert.equal([...zodiacSource.matchAll(/\{ key: '/g)].length, 12)
+  assert.match(zodiacSource, /key: 'cat',[^\n]+animal: 'Mèo'/)
+  assert.doesNotMatch(uiSource, /slice\(0,1\)/)
 })
 
 test('deep-link invite is redeemed automatically instead of requiring confirmation', () => {
