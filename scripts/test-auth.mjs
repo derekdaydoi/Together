@@ -106,7 +106,7 @@ for (const error of [
     h.pending.resolve({ error })
     await work
     assert.equal(h.state.view, 'login')
-    assert.match(h.state.error, /Anonymous Sign-ins đang tắt/)
+    assert.match(h.state.error, /Anonymous access/)
     assert.doesNotMatch(h.state.error, /email|Magic Link/i)
     assert.equal(h.state.busy, false)
   })
