@@ -18,8 +18,8 @@ Sản phẩm không chấm điểm relationship, không tạo streak, không ép
 ## Full flow đã build
 
 1. **Onboarding** — định vị sản phẩm bằng bốn trụ: workdate, energy, closeness, shared plans.
-2. **Magic Link Auth** — có back navigation, loading state, callback error state và exact production callback URL.
-3. **Profile + Avatar Upload** — user tải ảnh; ảnh được crop/nén WebP 512×512 trước khi upload.
+2. **Zero-email device identity** — mỗi thiết bị tự tạo một Supabase anonymous identity; không Gmail, mật khẩu hay Magic Link.
+3. **Profile + Zodiac Avatar** — đặt tên và chọn một trong 12 con giáp Việt Nam; không dùng chữ cái đầu làm avatar mặc định.
 4. **Create / Join Couple** — tạo không gian riêng hoặc tham gia qua mã mời.
 5. **Today** — nhìn nhanh trạng thái hai người, workdate và recommendation trong ngày.
 6. **Daily State** — energy 1–5 + closeness 1–5 + note.
@@ -98,31 +98,22 @@ Một trigger trên `auth.users` tự bootstrap `public.profiles`, nên user kh�
 - Weekly check-in của partner chỉ reveal sau khi cả hai cùng submit.
 - V1 hard-limit đúng **2 member/couple** ở database trigger, không chỉ ở UI.
 
-## Magic Link production flow
+## Zero-email production flow
 
-Frontend gửi Magic Link với callback chính xác:
+Frontend dùng Supabase Anonymous Auth. Khi user bấm **Bắt đầu**, app:
 
-`https://derekdaydoi.github.io/Together/`
+1. kiểm tra session đã lưu trên thiết bị;
+2. nếu chưa có session, gọi anonymous sign-in để tạo identity riêng;
+3. yêu cầu đặt tên + chọn avatar 12 con giáp;
+4. nếu đã thuộc couple → vào Today;
+5. nếu chưa có couple → đi tới Create / Join;
+6. deep-link có `?invite=...` được redeem tự động sau khi profile hoàn tất.
 
-Khi user quay lại từ email, app:
+### Cấu hình Supabase bắt buộc
 
-1. kiểm tra session hiện tại;
-2. để `supabase-js` consume token trong URL;
-3. hiển thị lỗi callback thay vì blank/dead-end;
-4. bootstrap/load profile;
-5. nếu đã có couple → vào `Today`;
-6. nếu chưa có couple → đi `Profile → Connect`.
+Supabase → **Authentication → Providers → Anonymous** phải được bật. Workflow production kiểm tra setting này trước khi deploy để tránh phát hành frontend zero-email vào backend đang chặn anonymous signup.
 
-Magic Link là one-time link. Nếu link đã được mở/scanned trước hoặc hết hạn, app yêu cầu gửi link mới thay vì để user mắc kẹt.
-
-### URL Configuration bắt buộc trên Supabase hosted project
-
-Supabase → **Authentication → URL Configuration**:
-
-- Site URL: `https://derekdaydoi.github.io/Together/`
-- Additional Redirect URL: `https://derekdaydoi.github.io/Together/`
-
-Đây là account-level Auth setting; source code không thể tự thay thế allow-list của Supabase.
+Anonymous identity gắn với session lưu trên thiết bị. Clear site data, xóa PWA hoặc đổi thiết bị có thể làm mất identity ở V1; account recovery là scope riêng.
 
 ## Chạy local
 
@@ -148,10 +139,7 @@ VITE_SUPABASE_PUBLISHABLE_KEY=sb_publishable_YOUR_KEY
 
 Sau đó apply `supabase/schema.sql` + migrations, deploy Edge Function `join-couple`, rồi chạy lại app.
 
-Nếu cần đăng nhập bằng Magic Link ngay trên máy local, tạo `.env.local` với **publishable**
-URL/key của project (không đưa secret/service-role key vào frontend). Đồng thời thêm
-`http://localhost:3000/` vào **Authentication → URL Configuration → Redirect URLs**
-trên Supabase. Link local sẽ quay về localhost, vì thế máy chạy Vite phải đang bật.
+Để test zero-email local với Supabase thật, tạo `.env.local` với **publishable** URL/key của project. Anonymous provider phải được bật trên cùng project. Không đưa secret/service-role key vào frontend.
 
 ## Deploy
 
@@ -192,4 +180,4 @@ Google Calendar nên là V1.5 sau khi core behavior chứng minh được giá t
 - Auth profile bootstrap: trigger on `auth.users`
 - Security: RLS trên toàn bộ public product tables
 
-Supabase Security Advisor hiện chỉ cảnh báo **Leaked Password Protection Disabled**; Together đang dùng passwordless Magic Link nên cảnh báo này không chặn flow hiện tại. Performance Advisor chỉ báo index chưa được sử dụng do product tables mới gần như chưa có dữ liệu.
+Supabase Security Advisor vẫn có cảnh báo **Leaked Password Protection Disabled**; Together V1 không dùng password login nên cảnh báo này không chặn zero-email flow hiện tại. Performance Advisor chỉ báo index chưa được sử dụng do product tables mới gần như chưa có dữ liệu.
