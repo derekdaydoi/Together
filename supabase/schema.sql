@@ -15,6 +15,7 @@ create table public.profiles (
   id uuid primary key references auth.users(id) on delete cascade,
   display_name text not null default 'Bạn' check (char_length(display_name) between 1 and 60),
   avatar_path text,
+  avatar_key text check (avatar_key is null or avatar_key in ('rat','buffalo','tiger','cat','dragon','snake','horse','goat','monkey','rooster','dog','pig')),
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );
