@@ -9,7 +9,7 @@ export function Shell({ children, minimal = false }: { children: ReactNode; mini
 }
 export function Page({ children, className = '' }: { children: ReactNode; className?: string }) { return <div className={`page ${className}`}>{children}</div> }
 export function BrandMark({ compact = false }: { compact?: boolean }) { return <div className={`brand ${compact ? 'compact' : ''}`}><div className="brand-hearts"><span/><span/></div><div className="brand-word">together.</div></div> }
-export function Signature({ compact = false }: { compact?: boolean }) { return <footer className={`signature ${compact ? 'compact' : ''}`}><span>© {new Date().getFullYear()}</span><strong>@derekdaydoi</strong><span>· Together</span></footer> }
+export function Signature({ compact = false }: { compact?: boolean }) { return <footer className={`signature ${compact ? 'compact' : ''}`}><strong>@derekdaydoi</strong></footer> }
 export function Avatar({ profile, size = 'md' }: { profile: Profile; size?: 'sm'|'md'|'lg'|'xl' }) {
   const zodiac = zodiacByKey(profile.zodiacKey)
   return <div className={`avatar avatar-${size} ${zodiac ? `zodiac-${zodiac.tone}` : 'avatar-empty'}`} title={zodiac ? `${zodiac.label} · ${zodiac.animal}` : profile.displayName}>
