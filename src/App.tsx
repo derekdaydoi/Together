@@ -119,7 +119,7 @@ export default function App(){
             if(fresh){
               // React may evaluate this updater after a local mutation was queued.
               setState(old=>isActive()&&mutationVersionRef.current===mutationVersion?fresh:old)
-              if(initialLoad)setView('today')
+              if(initialLoad)setView(fresh.me.zodiacKey?'today':'profile')
               if(subscribedCoupleId!==fresh.id){
                 unsubscribe()
                 subscribedCoupleId=fresh.id
@@ -203,7 +203,7 @@ export default function App(){
       const detail=error as {code?:string;message?:string}|null
       const anonymousDisabled=detail?.code==='anonymous_provider_disabled'||/Anonymous sign-ins are disabled/i.test(detail?.message??'')
       setAuthError(anonymousDisabled
-        ?'Together chưa thể tạo phiên riêng trên thiết bị này vì Anonymous Sign-ins đang tắt trong Supabase. Bật Anonymous Sign-ins cho project rồi chọn Thử lại.'
+        ?'Together chưa mở được tài khoản riêng trên thiết bị này. Anonymous access của backend hiện chưa được bật; bật cấu hình này rồi chọn Thử lại.'
         :error instanceof Error?error.message:'Không thể khởi tạo phiên riêng trên thiết bị này.')
       setView('login')
     }finally{anonymousBusyRef.current=false;setAnonymousBusy(false)}
@@ -243,7 +243,7 @@ export default function App(){
   const common={state,updateState,open,notify}
   const minimal=['login','profile','connect','daily','work','availability','plan','plan-detail','checkin'].includes(view)
   return <Shell minimal={minimal}>
-    {view==='profile'&&<ProfileSetup key={authUserId??'demo'} {...common} onBack={backToOnboarding} onContinue={()=>navigate('connect')}/>}
+    {view==='profile'&&<ProfileSetup key={authUserId??'demo'} {...common} onBack={backToOnboarding} onContinue={()=>navigate(state.id?'today':'connect')}/>
     {view==='connect'&&<Connect key={authUserId??'demo'} {...common} onBack={()=>navigate('profile')} onDone={finishCoupleSetup}/>}
     {view==='today'&&<Today {...common} onPickSuggestion={(date,start,end)=>suggestPlan(date,start,end,'today')}/>}
     {view==='week'&&<Week {...common} onPickSuggestion={(date,start,end)=>suggestPlan(date,start,end,'week')}/>}
