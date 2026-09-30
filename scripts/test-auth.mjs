@@ -5,99 +5,113 @@ import vm from 'node:vm'
 import ts from 'typescript'
 
 const source = await readFile(new URL('../src/App.tsx', import.meta.url), 'utf8')
+const setupSource = await readFile(new URL('../src/screens-setup.tsx', import.meta.url), 'utf8')
 const ast = ts.createSourceFile('App.tsx', source, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX)
-const names = ['readAuthCallbackError', 'authErrorText', 'isRateLimitError', 'friendlyAuthError', 'authRedirectUrl']
-const declarations = ast.statements.filter(node => ts.isVariableStatement(node) && node.declarationList.declarations.some(d => names.includes(d.name.getText(ast))))
-const js = ts.transpileModule(declarations.map(n => n.getText(ast).replace(/^export /, '')).join('\n'), {compilerOptions: {target: ts.ScriptTarget.ES2022}}).outputText
-const context = vm.createContext({URL, URLSearchParams})
-vm.runInContext(`${js}\nglobalThis.helpers={${names.join(',')}}`, context)
-const h = context.helpers
 
-test('callback errors decode once and preserve literal percent and plus signs', () => {
-  assert.equal(h.readAuthCallbackError('', '#error_description=100%25+invalid%2Blink'), '100% invalid+link')
-  assert.equal(h.readAuthCallbackError('?error_code=otp_expired&error_description=Expired', ''), 'otp_expired: Expired')
-  assert.equal(h.readAuthCallbackError('', '#access_token=secret'), null)
-  assert.equal(h.readAuthCallbackError('?error=access_denied', ''), 'access_denied')
-})
-test('redirect follows actual origin and base for dev, local production preview and hosted app', () => {
-  assert.equal(h.authRedirectUrl('http://localhost:3000', '/'), 'http://localhost:3000/')
-  assert.equal(h.authRedirectUrl('http://localhost:3000', '/Together/'), 'http://localhost:3000/Together/')
-  assert.equal(h.authRedirectUrl('https://derekdaydoi.github.io', '/Together/'), 'https://derekdaydoi.github.io/Together/')
-})
-test('structured Auth codes distinguish quotas, invalid email, expired links, SMTP and network', () => {
-  assert.ok(h.isRateLimitError(h.authErrorText({status:429,message:'Request rejected'})))
-  assert.ok(h.isRateLimitError(h.authErrorText({code:'over_email_send_rate_limit',message:'Rejected'})))
-  assert.match(h.friendlyAuthError('email_address_invalid: invalid email'), /địa chỉ email/)
-  assert.match(h.friendlyAuthError('otp_expired: expired'), /hết hạn/)
-  assert.match(h.friendlyAuthError('Error sending confirmation email'), /cấu hình email/)
-  assert.match(h.friendlyAuthError('Failed to fetch'), /kết nối mạng/)
-})
-
-let handler
-function find(node) {
-  if(ts.isVariableDeclaration(node) && node.name.getText(ast)==='sendMagicLink')handler=node.initializer.getText(ast)
-  ts.forEachChild(node,find)
+let startWithoutEmail
+function visit(node) {
+  if (ts.isVariableDeclaration(node) && node.name.getText(ast) === 'startWithoutEmail') {
+    startWithoutEmail = node.initializer.getText(ast)
+  }
+  ts.forEachChild(node, visit)
 }
-find(ast)
-assert.ok(handler)
-const handlerJS=ts.transpileModule(`globalThis.sendMagicLink=${handler.replace('import.meta.env.BASE_URL', "'/'")}`, {compilerOptions:{target:ts.ScriptTarget.ES2022}}).outputText
-function harness(request,email=' person@example.com ') {
-  const state={sending:false,error:null,sent:false,cooldown:0,calls:0}
-  const scope=vm.createContext({
-    ...h,authEmail:email,authCooldown:0,authSendingRef:{current:false},authEpochRef:{current:0},
-    supabase:{auth:{signInWithOtp:args=>{state.calls++;state.args=args;return request(args)}}},
-    setAuthSending:value=>state.sending=value,setAuthError:value=>state.error=value,
-    setAuthSent:value=>state.sent=value,setAuthCooldown:value=>state.cooldown=value,
-    sessionStorage:{setItem:()=>{}},window:{location:{origin:'http://localhost:3000'}},notify:()=>{},
+visit(ast)
+assert.ok(startWithoutEmail)
+
+const handlerJS = ts.transpileModule(`globalThis.startWithoutEmail=${startWithoutEmail}`, {
+  compilerOptions: { target: ts.ScriptTarget.ES2022 },
+}).outputText
+
+const deferred = () => {
+  let resolve, reject
+  const promise = new Promise((yes, no) => { resolve = yes; reject = no })
+  return { promise, resolve, reject }
+}
+
+function harness() {
+  const pending = deferred()
+  const state = { calls: 0, busy: false, error: null, view: 'onboarding', saved: false }
+  const scope = vm.createContext({
+    Error,
+    sessionChecked: true,
+    anonymousBusyRef: { current: false },
+    authEpochRef: { current: 0 },
+    authUserRef: { current: null },
+    supabase: { auth: { signInAnonymously: () => { state.calls++; return pending.promise } } },
+    setAnonymousBusy: value => { state.busy = value },
+    setAuthError: value => { state.error = value },
+    setView: value => { state.view = value },
+    localStorage: { setItem: () => { state.saved = true } },
   })
-  vm.runInContext(handlerJS,scope)
-  return {state,scope,send:scope.sendMagicLink}
+  vm.runInContext(handlerJS, scope)
+  return { scope, state, pending, start: scope.startWithoutEmail }
 }
-test('rapid duplicate submissions make one request and release pending state',async()=>{
-  let resolve
-  const pending=new Promise(r=>resolve=r)
-  const {state,send}=harness(()=>pending)
-  const first=send()
-  await send()
-  assert.equal(state.calls,1)
-  assert.equal(state.sending,true)
-  resolve({error:null})
+
+test('zero-email architecture contains no OTP or Magic Link fallback', () => {
+  assert.doesNotMatch(source, /signInWithOtp|sendMagicLink|authEmail|emailMode|Gửi Magic Link|Magic Link/)
+  assert.match(source, /signInAnonymously/)
+})
+
+test('deep-link invite is redeemed automatically instead of requiring confirmation', () => {
+  assert.match(setupSource, /deepLinkMode/)
+  assert.match(setupSource, /void join\(code\)/)
+  assert.doesNotMatch(setupSource, /Xác nhận tham gia/)
+  assert.match(setupSource, /Bạn không cần nhập lại mã/)
+})
+
+test('rapid anonymous bootstrap calls create only one identity request', async () => {
+  const h = harness()
+  const first = h.start()
+  await h.start()
+  assert.equal(h.state.calls, 1)
+  assert.equal(h.state.busy, true)
+  h.pending.resolve({ error: null })
   await first
-  assert.equal(state.sent,true)
-  assert.equal(state.cooldown,60)
-  assert.equal(state.sending,false)
-  assert.equal(state.args.email,'person@example.com')
-  assert.equal(state.args.options.emailRedirectTo,'http://localhost:3000/')
+  assert.equal(h.state.saved, true)
+  assert.equal(h.state.busy, false)
+  assert.equal(h.scope.anonymousBusyRef.current, false)
 })
-test('rejected network request surfaces error and releases lock for retry',async()=>{
-  const {state,send}=harness(()=>Promise.reject(new Error('Failed to fetch')))
-  await send()
-  assert.match(state.error,/Failed to fetch/)
-  assert.equal(state.sending,false)
-  await send()
-  assert.equal(state.calls,2)
+
+test('bootstrap never replaces an existing identity', async () => {
+  const h = harness()
+  h.scope.authUserRef.current = 'existing-user'
+  await h.start()
+  assert.equal(h.state.calls, 0)
 })
-test('provider rate limit response is shown and starts minimum cooldown',async()=>{
-  const {state,send}=harness(async()=>({error:{status:429,code:'over_email_send_rate_limit',message:'Rejected'}}))
-  await send()
-  assert.equal(state.sent,false)
-  assert.equal(state.cooldown,60)
-  assert.ok(h.isRateLimitError(state.error))
+
+test('bootstrap waits until the existing session check is complete', async () => {
+  const h = harness()
+  h.scope.sessionChecked = false
+  await h.start()
+  assert.equal(h.state.calls, 0)
 })
-test('invalid email does not issue an Auth request',async()=>{
-  const {state,send}=harness(async()=>({error:null}),'bad address')
-  await send()
-  assert.equal(state.calls,0)
-  assert.match(state.error,/email hợp lệ/)
-})
-test('late request result cannot replace state after account changes',async()=>{
-  let resolve
-  const pending=new Promise(r=>resolve=r)
-  const {state,scope,send}=harness(()=>pending)
-  const first=send()
-  scope.authEpochRef.current++
-  resolve({error:{message:'Late failure'}})
-  await first
-  assert.equal(state.error,null)
-  assert.equal(state.sending,false)
+
+for (const error of [
+  { code: 'anonymous_provider_disabled', message: 'Provider unavailable' },
+  new Error('Anonymous sign-ins are disabled'),
+]) {
+  test(`disabled anonymous provider surfaces configuration error without email fallback (${error.code ?? 'message'})`, async () => {
+    const h = harness()
+    const work = h.start()
+    h.pending.resolve({ error })
+    await work
+    assert.equal(h.state.view, 'login')
+    assert.match(h.state.error, /Anonymous Sign-ins đang tắt/)
+    assert.doesNotMatch(h.state.error, /email|Magic Link/i)
+    assert.equal(h.state.busy, false)
+  })
+}
+
+test('late bootstrap failure cannot overwrite a newer session', async () => {
+  const h = harness()
+  const work = h.start()
+  h.scope.authEpochRef.current++
+  h.scope.authUserRef.current = 'new-user'
+  h.state.view = 'today'
+  h.state.error = 'new session state'
+  h.pending.reject(new Error('late failure'))
+  await work
+  assert.equal(h.state.view, 'today')
+  assert.equal(h.state.error, 'new session state')
+  assert.equal(h.state.busy, false)
 })

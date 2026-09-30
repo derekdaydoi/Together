@@ -124,9 +124,14 @@ export async function loadRemoteState(): Promise<CoupleState | null> {
 export async function createRemoteCouple(expectedUserId?: string) {
   const sb = client()
   const user = await ensureRemoteProfile('Bạn', expectedUserId)
-  const { data, error } = await sb.from('couples').insert({ name: 'Chúng mình', created_by: user.id }).select('id').single()
+  const { data, error } = await sb.from('couples').insert({ name: 'Chúng mình', created_by: user.id })
+    .select('id,invite_code,invite_expires_at').single()
   if (error) throw error
-  return data.id as string
+  return {
+    id: data.id as string,
+    code: data.invite_code as string,
+    expiresAt: data.invite_expires_at as string,
+  }
 }
 
 export async function joinRemoteCouple(code: string, expectedUserId?: string) {
