@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { ArrowRight, CalendarDays, ChevronRight, Copy, Heart, Link2, Plus, Share2, Smartphone, UsersRound, Zap } from 'lucide-react'
+import { ArrowRight, CalendarDays, ChevronRight, Copy, Heart, Link2, Plus, Share2, UsersRound, Zap } from 'lucide-react'
 import type { CommonProps } from './appTypes'
 import { Avatar, BrandMark, Field, Page, Signature, TopBack } from './UI'
 import { isSupabaseConfigured, supabase } from './lib/supabase'
@@ -12,7 +12,6 @@ export function Onboarding({ onStart,busy=false }: { onStart: () => void; busy?:
     <div className="onboarding-art" aria-hidden><div className="big-heart heart-a"/><div className="big-heart heart-b"/><div className="orbit orbit-a"/><div className="orbit orbit-b"/><div className="tiny-note note-one">better together</div><div className="tiny-note note-two">every day ♡</div></div>
     <div className="onboarding-copy"><BrandMark/><h1>Hai cuộc sống khác nhau.<br/>Một nhịp chung.</h1><p>Together không ép hai người dính lấy nhau. Nó giúp cả hai nhìn thấy lịch làm việc, năng lượng và nhu cầu gần gũi — rồi tìm ra khoảng thời gian thật sự phù hợp.</p></div>
     <div className="feature-grid"><Feature icon={CalendarDays} title="Quản lý workdate" text="Biết lúc nào thật sự rảnh" tone="mint"/><Feature icon={Zap} title="Theo dõi năng lượng" text="Đỡ lên plan sai thời điểm" tone="peach"/><Feature icon={Heart} title="Hiểu nhu cầu gần gũi" text="Không ai phải đoán ý ai" tone="rose"/><Feature icon={UsersRound} title="Lên kế hoạch chung" text="Soft plan hoặc hard plan" tone="lilac"/></div>
-    {isSupabaseConfigured&&<div className="privacy-note"><Smartphone size={19} aria-hidden="true"/><span><strong>Cài Together lên màn hình chính trước nhé.</strong> Trên iPhone: Chia sẻ → Thêm vào MH chính. Trên Android: menu trình duyệt → Cài đặt ứng dụng. Hãy mở bằng biểu tượng đó rồi bắt đầu để giữ tài khoản trên máy.</span></div>}
     <button className="primary-button onboarding-button" onClick={onStart} disabled={busy}>{busy?'Đang chuẩn bị…':'Bắt đầu'} <ArrowRight size={18}/></button><p className="small-note center">Bận rộn hơn, nhưng vẫn gần nhau hơn mỗi ngày.</p><Signature compact/>
   </div>
 }
