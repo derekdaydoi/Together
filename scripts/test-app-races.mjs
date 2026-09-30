@@ -212,13 +212,12 @@ test('effect cleanup prevents late commits and detaches its refresh request', as
 
 function anonymousHarness() {
   const pending = deferred()
-  const state = { calls: 0, busy: false, error: null, view: 'onboarding', saved: false, emailMode: false }
+  const state = { calls: 0, busy: false, error: null, view: 'onboarding', saved: false }
   const scope = vm.createContext({
     Error, sessionChecked: true, anonymousBusy: false, anonymousBusyRef: { current: false },
     authEpochRef: { current: 0 }, authUserRef: { current: null },
     supabase: { auth: { signInAnonymously: () => { state.calls++; return pending.promise } } },
     setAnonymousBusy: value => { state.busy = value }, setAuthError: value => { state.error = value },
-    setEmailMode: value => { state.emailMode = value },
     setView: value => { state.view = value }, localStorage: { setItem: () => { state.saved = true } },
   })
   run(scope, `globalThis.start=${handlers.startWithoutEmail}`)
@@ -260,20 +259,20 @@ for (const error of [
   { code: 'anonymous_provider_disabled', message: 'Provider unavailable' },
   new Error('Anonymous sign-ins are disabled'),
 ]) {
-  test(`disabled anonymous provider opens actionable email fallback (${error.code ?? 'message'})`, async () => {
+  test(`disabled anonymous provider surfaces actionable configuration error (${error.code ?? 'message'})`, async () => {
     const h = anonymousHarness(); const work = h.start()
     h.pending.resolve({ error }); await work
-    assert.equal(h.state.view, 'login'); assert.equal(h.state.emailMode, true)
-    assert.match(h.state.error, /chưa được bật/)
-    assert.match(h.state.error, /nhập email.*Gửi Magic Link/)
+    assert.equal(h.state.view, 'login')
+    assert.match(h.state.error, /Anonymous Sign-ins đang tắt/)
+    assert.doesNotMatch(h.state.error, /email|Magic Link/i)
     assert.equal(h.state.busy, false)
   })
 }
 
-test('late disabled-provider error does not open email fallback for a new session', async () => {
+test('late disabled-provider error does not overwrite a new session', async () => {
   const h = anonymousHarness(); const work = h.start()
   h.scope.authEpochRef.current++; h.state.view = 'today'
   h.pending.resolve({ error: { code: 'anonymous_provider_disabled' } }); await work
-  assert.equal(h.state.view, 'today'); assert.equal(h.state.emailMode, false)
+  assert.equal(h.state.view, 'today')
   assert.equal(h.state.error, null)
 })
