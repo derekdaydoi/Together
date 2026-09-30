@@ -2,8 +2,9 @@ export type WorkType = 'office' | 'remote' | 'shift' | 'off' | 'other'
 export type AvailabilityStatus = 'available' | 'busy' | 'prefer_alone' | 'want_together'
 export type PlanType = 'soft' | 'hard'
 export type PlanStatus = 'proposed' | 'confirmed' | 'cancelled'
+export type ZodiacKey = 'rat' | 'buffalo' | 'tiger' | 'cat' | 'dragon' | 'snake' | 'horse' | 'goat' | 'monkey' | 'rooster' | 'dog' | 'pig'
 
-export type Profile = { id: string; displayName: string; avatarUrl?: string; avatarPath?: string }
+export type Profile = { id: string; displayName: string; avatarUrl?: string; avatarPath?: string; zodiacKey?: ZodiacKey }
 export type DailyState = { userId: string; date: string; energy: number; closeness: number; note?: string }
 export type WorkSchedule = { id: string; userId: string; date: string; start: string; end: string; type: WorkType; note?: string; repeatsWeekly?: boolean }
 export type AvailabilityBlock = { id: string; userId: string; date: string; start: string; end: string; status: AvailabilityStatus; note?: string }

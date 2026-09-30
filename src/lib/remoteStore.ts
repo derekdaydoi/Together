@@ -1,5 +1,5 @@
 import { supabase } from './supabase'
-import type { AvailabilityBlock, CoupleState, DailyState, SharedPlan, WeeklyCheckin, WorkSchedule } from '../types'
+import type { AvailabilityBlock, CoupleState, DailyState, SharedPlan, WeeklyCheckin, WorkSchedule, ZodiacKey } from '../types'
 import { localTimestamp } from './dates'
 
 const client = () => {
@@ -15,7 +15,7 @@ export async function ensureRemoteProfile(displayName = 'Bạn', expectedUserId?
   // Verify identity before the bootstrap INSERT, which could otherwise save
   // the previous account's display name in the newly signed-in user's profile.
   if (expectedUserId && user.id !== expectedUserId) throw new Error('Tài khoản đã thay đổi. Hãy tải lại hồ sơ.')
-  const { data } = await sb.from('profiles').select('id,display_name,avatar_path').eq('id', user.id).maybeSingle()
+  const { data } = await sb.from('profiles').select('id,display_name,avatar_path,avatar_key').eq('id', user.id).maybeSingle()
   if (!data) {
     const { error } = await sb.from('profiles').insert({ id: user.id, display_name: displayName })
     if (error) throw error
@@ -23,11 +23,12 @@ export async function ensureRemoteProfile(displayName = 'Bạn', expectedUserId?
   return user
 }
 
-export async function saveRemoteProfile(displayName: string, avatarPath?: string, expectedUserId?: string) {
+export async function saveRemoteProfile(displayName: string, avatarPath?: string | null, expectedUserId?: string, zodiacKey?: ZodiacKey) {
   const sb = client()
   const user = await ensureRemoteProfile(displayName, expectedUserId)
   const payload: Record<string, unknown> = { id: user.id, display_name: displayName, updated_at: new Date().toISOString() }
   if (avatarPath !== undefined) payload.avatar_path = avatarPath
+  if (zodiacKey !== undefined) payload.avatar_key = zodiacKey
   const { error } = await sb.from('profiles').upsert(payload, { onConflict: 'id' })
   if (error) throw error
 }
@@ -49,7 +50,7 @@ function localParts(value: string) {
 export async function loadRemoteState(): Promise<CoupleState | null> {
   const sb = client()
   const user = await ensureRemoteProfile()
-  const { data: profile, error: profileError } = await sb.from('profiles').select('id,display_name,avatar_path').eq('id', user.id).single()
+  const { data: profile, error: profileError } = await sb.from('profiles').select('id,display_name,avatar_path,avatar_key').eq('id', user.id).single()
   if (profileError) throw profileError
 
   const { data: membership, error: membershipError } = await sb.from('couple_members').select('couple_id').eq('user_id', user.id).maybeSingle()
@@ -74,10 +75,10 @@ export async function loadRemoteState(): Promise<CoupleState | null> {
   }
 
   const memberIds = (membersRes.data ?? []).map((m: any) => m.user_id as string)
-  const { data: profiles, error: profilesError } = await sb.from('profiles').select('id,display_name,avatar_path').in('id', memberIds)
+  const { data: profiles, error: profilesError } = await sb.from('profiles').select('id,display_name,avatar_path,avatar_key').in('id', memberIds)
   if (profilesError) throw profilesError
   const meRow = profiles?.find((p: any) => p.id === user.id) ?? profile
-  const partnerRow = profiles?.find((p: any) => p.id !== user.id) ?? { id: 'waiting-partner', display_name: 'Người ấy', avatar_path: null }
+  const partnerRow = profiles?.find((p: any) => p.id !== user.id) ?? { id: 'waiting-partner', display_name: 'Người ấy', avatar_path: null, avatar_key: null }
   const [meAvatar, partnerAvatar] = await Promise.all([signedAvatar(meRow.avatar_path), signedAvatar(partnerRow.avatar_path)])
 
   const dailyStates: DailyState[] = (dailyRes.data ?? []).map((x: any) => ({
@@ -111,8 +112,8 @@ export async function loadRemoteState(): Promise<CoupleState | null> {
     name: coupleRes.data.name,
     inviteCode: coupleRes.data.invite_code,
     inviteExpiresAt: coupleRes.data.invite_expires_at,
-    me: { id: meRow.id, displayName: meRow.display_name, avatarPath: meRow.avatar_path ?? undefined, avatarUrl: meAvatar },
-    partner: { id: partnerRow.id, displayName: partnerRow.display_name, avatarPath: partnerRow.avatar_path ?? undefined, avatarUrl: partnerAvatar },
+    me: { id: meRow.id, displayName: meRow.display_name, avatarPath: meRow.avatar_path ?? undefined, avatarUrl: meAvatar, zodiacKey: (meRow.avatar_key as ZodiacKey | null) ?? undefined },
+    partner: { id: partnerRow.id, displayName: partnerRow.display_name, avatarPath: partnerRow.avatar_path ?? undefined, avatarUrl: partnerAvatar, zodiacKey: (partnerRow.avatar_key as ZodiacKey | null) ?? undefined },
     dailyStates,
     workSchedules,
     availability,
@@ -173,12 +174,12 @@ export async function loadRemoteProfileState(): Promise<CoupleState> {
   const sb = client()
   const user = await ensureRemoteProfile()
   const { data: profile, error } = await sb.from('profiles')
-    .select('id,display_name,avatar_path').eq('id', user.id).single()
+    .select('id,display_name,avatar_path,avatar_key').eq('id', user.id).single()
   if (error) throw error
   return {
     id: '', name: 'Chúng mình', inviteCode: '',
     me: { id: user.id, displayName: profile.display_name, avatarPath: profile.avatar_path ?? undefined,
-      avatarUrl: await signedAvatar(profile.avatar_path) },
+      avatarUrl: await signedAvatar(profile.avatar_path), zodiacKey: (profile.avatar_key as ZodiacKey | null) ?? undefined },
     partner: { id: 'waiting-partner', displayName: 'Người ấy' },
     dailyStates: [], workSchedules: [], availability: [], plans: [], checkins: [],
   }
