@@ -243,7 +243,7 @@ export default function App(){
   const common={state,updateState,open,notify}
   const minimal=['login','profile','connect','daily','work','availability','plan','plan-detail','checkin'].includes(view)
   return <Shell minimal={minimal}>
-    {view==='profile'&&<ProfileSetup key={authUserId??'demo'} {...common} onBack={backToOnboarding} onContinue={()=>navigate(state.id?'today':'connect')}/>
+    {view==='profile'&&<ProfileSetup key={authUserId??'demo'} {...common} onBack={backToOnboarding} onContinue={()=>navigate(state.id?'today':'connect')}/>}
     {view==='connect'&&<Connect key={authUserId??'demo'} {...common} onBack={()=>navigate('profile')} onDone={finishCoupleSetup}/>}
     {view==='today'&&<Today {...common} onPickSuggestion={(date,start,end)=>suggestPlan(date,start,end,'today')}/>}
     {view==='week'&&<Week {...common} onPickSuggestion={(date,start,end)=>suggestPlan(date,start,end,'week')}/>}
