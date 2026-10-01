@@ -255,6 +255,25 @@ export async function confirmRemotePlan(coupleId: string, planId: string, expect
 export async function saveRemoteCheckin(coupleId: string, input: WeeklyCheckin) {
   const sb = client()
   const { error } = await sb.from('weekly_checkins').upsert({ couple_id: coupleId, user_id: input.userId, week_start: input.weekStart, feeling: input.feeling, note: input.note ?? null, updated_at: new Date().toISOString() }, { onConflict: 'couple_id,user_id,week_start' })
+  if (error?.code === '42501') throw new Error('Check-in đã khóa sau khi cả hai cùng trả lời.')
+  if (error) throw error
+}
+
+/** Redirect back to the GitHub Pages subpath (not site root). */
+const oauthReturnUrl = () => new URL(import.meta.env.BASE_URL, window.location.origin).toString()
+
+export async function signInWithGoogle() {
+  const { data, error } = await client().auth.signInWithOAuth({ provider: 'google', options: { redirectTo: oauthReturnUrl() } })
+  if (error) throw error
+  if (!data.url) throw new Error('Google không trả về địa chỉ đăng nhập.')
+}
+
+export async function linkGoogleAccount() {
+  const sb = client()
+  const { data: { user }, error: userError } = await sb.auth.getUser()
+  if (userError || !user || user.is_anonymous !== true)
+    throw new Error('Chỉ tài khoản ẩn danh đang đăng nhập mới có thể liên kết Google.')
+  const { error } = await sb.auth.linkIdentity({ provider: 'google', options: { redirectTo: oauthReturnUrl() } })
   if (error) throw error
 }
 
