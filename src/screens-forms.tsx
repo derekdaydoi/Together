@@ -19,4 +19,55 @@ const availabilityMeta:Record<AvailabilityStatus,{label:string;className:string}
 export function DailyStateForm({state,updateState,onClose,notify}:CommonProps&{onClose:()=>void}){const date=todayDate(),current=state.dailyStates.find(x=>x.userId===state.me.id&&x.date===date),[energy,setEnergy]=useState(current?.energy??3),[closeness,setCloseness]=useState(current?.closeness??3),[note,setNote]=useState(current?.note??'');const save=async()=>{const next:DailyState={userId:state.me.id,date,energy,closeness,note};try{if(supabase)await saveRemoteDaily(state.id,next)}catch(e){notify(e instanceof Error?e.message:'Không thể lưu trạng thái.','normal');return}updateState(d=>upsertDailyState(d,next));notify('Đã cập nhật trạng thái hôm nay.');onClose()};return <Page className="form-page"><TopBack title="Hôm nay bạn thế nào?" onBack={onClose}/><div className="form-intro"><span className="eyebrow">{formatDate(date)}</span><h2>Một tín hiệu nhỏ giúp người kia hiểu bạn hơn.</h2><p>Không có đáp án đúng. Trạng thái này chỉ dành cho hôm nay.</p></div><Scale label="Mức năng lượng" value={energy} onChange={setEnergy} tone="energy" labels={energyLabels}/><Scale label="Mức muốn gần nhau" value={closeness} onChange={setCloseness} tone="heart" labels={closenessLabels}/><Field label="Chia sẻ thêm (tuỳ chọn)"><textarea rows={3} value={note} onChange={e=>setNote(e.target.value)} placeholder="Hôm nay hơi mệt, chỉ muốn ở cạnh nhau nhẹ nhàng."/></Field><div className="privacy-note"><MoonStar size={16}/> Chỉ người trong couple mới nhìn thấy trạng thái này.</div><button className="primary-button sticky-action" onClick={save}>Lưu trạng thái</button></Page>}
 function Scale({label,value,onChange,tone,labels}:{label:string;value:number;onChange:(v:number)=>void;tone:string;labels:string[]}){const Icon=tone==='heart'?Heart:Zap;return <section className="scale-section"><div className="scale-label"><Icon size={18}/><strong>{label}</strong></div><div className={`scale-buttons ${tone}`}>{[1,2,3,4,5].map(n=><button key={n} className={n===value?'active':''} onClick={()=>onChange(n)}><Icon size={22} fill={n<=value?'currentColor':'none'}/></button>)}</div><strong className="scale-current">{labels[value-1]}</strong></section>}
 
-export function CheckinForm({state,updateState,onClose,notify}:CommonProps&{onClose:()=>void}){const weekStart=getWeekStart(),current=state.checkins.find(x=>x.userId===state.me.id&&x.weekStart===weekStart),[feeling,setFeeling]=useState<1|2|3>(current?.feeling??2),[note,setNote]=useState(current?.note??'');const save=async()=>{const next:WeeklyCheckin={userId:state.me.id,weekStart,feeling,note};try{if(supabase)await saveRemoteCheckin(state.id,next)}catch(e){notify(e instanceof Error?e.message:'Không thể gửi check-in.','normal');return}updateState(d=>upsertCheckin(d,next));notify('Đã gửi check-in tuần này.');onClose()};return <Page className="form-page checkin-page"><TopBack title="Weekly check-in" onBack={onClose}/><div className="form-intro"><span className="eyebrow">Tuần này của bạn thế nào?</span><h2>Thời gian bên nhau so với điều bạn cần?</h2><p>Không chấm điểm. Chỉ là tín hiệu để tuần sau dễ điều chỉnh hơn.</p></div><div className="feeling-options"><button className={feeling===1?'active':''} onClick={()=>setFeeling(1)}><span>☹</span><strong>Quá ít</strong></button><button className={feeling===2?'active':''} onClick={()=>setFeeling(2)}><span>☺</span><strong>Vừa đủ</strong></button><button className={feeling===3?'active':''} onClick={()=>setFeeling(3)}><span>◔</span><strong>Quá nhiều</strong></button></div><Field label="Chia sẻ thêm (tuỳ chọn)"><textarea rows={4} value={note} onChange={e=>setNote(e.target.value)} placeholder="Tuần này ổn áp! 💕"/></Field><div className="privacy-note"><Heart size={16}/> Câu trả lời được giữ riêng cho tới khi cả hai cùng hoàn thành.</div><button className="primary-button sticky-action" onClick={save}>Gửi phản hồi</button></Page>}
+export function CheckinForm({ state, updateState, onClose, notify }: CommonProps & { onClose: () => void }) {
+  const weekStart = weekStartISO()
+  const current = state.checkins.find(x => x.userId === state.me.id && x.weekStart === weekStart)
+  const partner = state.checkins.find(x => x.userId === state.partner.id && x.weekStart === weekStart)
+  // Partner's answer is revealed only after both completed the check-in.
+  const locked = Boolean(current && partner)
+  const [feeling, setFeeling] = useState<1 | 2 | 3>(current?.feeling ?? 2)
+  const [note, setNote] = useState(current?.note ?? '')
+  const [busy, setBusy] = useState(false)
+
+  const save = async () => {
+    if (busy || locked) return
+    setBusy(true)
+    const next: WeeklyCheckin = { userId: state.me.id, weekStart, feeling, note: note.trim() || undefined }
+    try {
+      if (supabase) await saveRemoteCheckin(state.id, next)
+      updateState(draft => upsertCheckin(draft, next))
+      notify('Đã gửi check-in tuần này.')
+      onClose()
+    } catch (error) {
+      notify(error instanceof Error ? error.message : 'Không thể gửi check-in.', 'normal')
+    } finally { setBusy(false) }
+  }
+
+  return <Page className="form-page checkin-page">
+    <TopBack title="Weekly check-in" onBack={onClose}/>
+    <div className="form-intro">
+      <span className="eyebrow">Tuần này của bạn thế nào?</span>
+      <h2>Thời gian bên nhau so với điều bạn cần?</h2>
+      <p>Không chấm điểm. Chỉ là tín hiệu để tuần sau dễ điều chỉnh hơn.</p>
+    </div>
+    <div className="feeling-options" role="group" aria-label="Thời gian bên nhau tuần này">
+      {([
+        { value: 1 as const, glyph: '☹', label: 'Quá ít' },
+        { value: 2 as const, glyph: '☺', label: 'Vừa đủ' },
+        { value: 3 as const, glyph: '◔', label: 'Quá nhiều' },
+      ]).map(option => <button key={option.value} type="button" disabled={busy||locked}
+        className={feeling===option.value?'active':''} aria-pressed={feeling===option.value}
+        onClick={()=>setFeeling(option.value)}><span>{option.glyph}</span><strong>{option.label}</strong></button>)}
+    </div>
+    <Field label="Chia sẻ thêm (tuỳ chọn)">
+      <textarea rows={4} maxLength={500} disabled={busy||locked} value={note}
+        onChange={event=>setNote(event.target.value)} placeholder="Tuần này ổn áp! 💕"/>
+    </Field>
+    {locked
+      ? <p className="privacy-note" role="status">Cả hai đã trả lời. Check-in tuần này đã chốt và không thể sửa.</p>
+      : <div className="privacy-note"><Heart size={16} aria-hidden="true"/> Câu trả lời được giữ riêng cho tới khi cả hai cùng hoàn thành.</div>}
+    <button className="primary-button sticky-action" disabled={busy||locked} onClick={()=>void save()}>
+      {locked ? 'Đã hoàn thành' : busy ? 'Đang gửi…' : 'Gửi phản hồi'}
+    </button>
+  </Page>
+}

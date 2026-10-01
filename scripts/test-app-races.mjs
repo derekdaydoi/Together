@@ -218,7 +218,7 @@ function anonymousHarness() {
     authEpochRef: { current: 0 }, authUserRef: { current: null },
     supabase: { auth: { signInAnonymously: () => { state.calls++; return pending.promise } } },
     setAnonymousBusy: value => { state.busy = value }, setAuthError: value => { state.error = value },
-    setView: value => { state.view = value }, localStorage: { setItem: () => { state.saved = true } },
+    setView: value => { state.view = value }, localStorage: { setItem: () => { state.saved = true }, removeItem: () => {} },
   })
   run(scope, `globalThis.start=${handlers.startWithoutEmail}`)
   return { scope, state, pending, start: scope.start }

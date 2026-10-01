@@ -15,6 +15,8 @@ concurrency:
   cancel-in-progress: true
 
 env:
+  # Do not expose recovery UI until Google OAuth provider + iOS PWA E2E are ready.
+  VITE_GOOGLE_RECOVERY_ENABLED: 'false'
   VITE_SUPABASE_URL: https://jirbjekrevydrqytvfee.supabase.co
   VITE_SUPABASE_PUBLISHABLE_KEY: sb_publishable_OPr4RWRxVhw67bxf3sjp7A_oL7zAqKD
 

@@ -1,0 +1,82 @@
+name: Together availability probe and encrypted backup
+
+# Scheduled workflows run only from the default branch. This PR cannot deploy.
+on:
+  schedule:
+    - cron: '17 2 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  health-check:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Probe auth provider health (not proof of database activity)
+        env:
+          SUPABASE_URL: https://jirbjekrevydrqytvfee.supabase.co
+          SUPABASE_PUBLISHABLE_KEY: ${{ vars.SUPABASE_PUBLISHABLE_KEY }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ -z "${SUPABASE_PUBLISHABLE_KEY:-}" ]]; then
+            echo "::warning::SUPABASE_PUBLISHABLE_KEY Actions variable not configured; health probe skipped."
+            exit 0
+          fi
+          curl --fail --silent --show-error --retry 3 --max-time 20 \
+            "$SUPABASE_URL/auth/v1/settings" -H "apikey: $SUPABASE_PUBLISHABLE_KEY" \
+            | node -e "let s='';process.stdin.on('data',d=>s+=d);process.stdin.on('end',()=>{const a=JSON.parse(s);if(a.external?.anonymous_users!==true)process.exit(1);console.log('Auth endpoint OK')})"
+
+  backup:
+    needs: health-check
+    runs-on: ubuntu-latest
+    container:
+      image: postgres:17
+    env:
+      SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
+      BACKUP_PASSPHRASE: ${{ secrets.BACKUP_PASSPHRASE }}
+    steps:
+      - name: Validate required secrets
+        id: gate
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ -z "${SUPABASE_DB_URL:-}" || -z "${BACKUP_PASSPHRASE:-}" ]]; then
+            echo "::warning::Backup skipped: SUPABASE_DB_URL and/or BACKUP_PASSPHRASE missing."
+            echo "run=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "run=true" >> "$GITHUB_OUTPUT"
+          fi
+      - name: Dump, validate and encrypt with PostgreSQL 17 client
+        if: steps.gate.outputs.run == 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          export DEBIAN_FRONTEND=noninteractive
+          apt-get update -qq
+          apt-get install -y -qq gnupg >/dev/null
+          umask 077
+          passfile="$(mktemp)"
+          trap 'rm -f "$passfile" together.dump' EXIT
+          printf '%s' "$BACKUP_PASSPHRASE" > "$passfile"
+          pg_dump "$SUPABASE_DB_URL" --format=custom --no-owner --no-privileges \
+            --schema=public --schema=auth \
+            --exclude-table=auth.audit_log_entries \
+            --exclude-table=auth.sessions \
+            --exclude-table=auth.refresh_tokens \
+            --file=together.dump
+          test -s together.dump
+          pg_restore --list together.dump >/dev/null
+          gpg --batch --yes --pinentry-mode loopback \
+            --passphrase-file "$passfile" --symmetric --cipher-algo AES256 \
+            --output "together-${GITHUB_RUN_ID}.dump.gpg" together.dump
+          test -s "together-${GITHUB_RUN_ID}.dump.gpg"
+      - name: Upload encrypted dump
+        if: steps.gate.outputs.run == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: together-backup-${{ github.run_id }}
+          path: together-*.dump.gpg
+          if-no-files-found: error
+          retention-days: 30

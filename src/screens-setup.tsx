@@ -7,12 +7,12 @@ import { ZODIAC_OPTIONS } from './zodiac'
 import type { ZodiacKey } from './types'
 import { createRemoteCouple, joinRemoteCouple, saveRemoteProfile } from './lib/remoteStore'
 
-export function Onboarding({ onStart,busy=false }: { onStart: () => void; busy?:boolean }) {
+export function Onboarding({ onStart,busy=false,onGoogle,googleBusy=false }: { onStart: () => void; busy?:boolean; onGoogle?: () => void; googleBusy?: boolean }) {
   return <div className="onboarding-screen">
     <div className="onboarding-art" aria-hidden><div className="big-heart heart-a"/><div className="big-heart heart-b"/><div className="orbit orbit-a"/><div className="orbit orbit-b"/><div className="tiny-note note-one">better together</div><div className="tiny-note note-two">every day ♡</div></div>
     <div className="onboarding-copy"><BrandMark/><h1>Hai cuộc sống khác nhau.<br/>Một nhịp chung.</h1><p>Together không ép hai người dính lấy nhau. Nó giúp cả hai nhìn thấy lịch làm việc, năng lượng và nhu cầu gần gũi — rồi tìm ra khoảng thời gian thật sự phù hợp.</p></div>
     <div className="feature-grid"><Feature icon={CalendarDays} title="Quản lý workdate" text="Biết lúc nào thật sự rảnh" tone="mint"/><Feature icon={Zap} title="Theo dõi năng lượng" text="Đỡ lên plan sai thời điểm" tone="peach"/><Feature icon={Heart} title="Hiểu nhu cầu gần gũi" text="Không ai phải đoán ý ai" tone="rose"/><Feature icon={UsersRound} title="Lên kế hoạch chung" text="Soft plan hoặc hard plan" tone="lilac"/></div>
-    <button className="primary-button onboarding-button" onClick={onStart} disabled={busy}>{busy?'Đang chuẩn bị…':'Bắt đầu'} <ArrowRight size={18}/></button><p className="small-note center">Bận rộn hơn, nhưng vẫn gần nhau hơn mỗi ngày.</p><Signature compact/>
+    <button className="primary-button onboarding-button" onClick={onStart} disabled={busy}>{busy?'Đang chuẩn bị…':'Bắt đầu'} <ArrowRight size={18}/></button>{onGoogle&&<button type="button" className="secondary-button" disabled={busy||googleBusy} onClick={onGoogle} style={{display:"block",margin:"12px auto"}}>{googleBusy?"Đang chuyển đến Google…":"Đã có tài khoản? Đăng nhập bằng Google"}</button>}<p className="small-note center">Bận rộn hơn, nhưng vẫn gần nhau hơn mỗi ngày.</p><Signature compact/>
   </div>
 }
 function Feature({ icon: Icon, title, text, tone }: { icon: typeof Heart; title: string; text: string; tone: string }) { return <div className={`feature-card ${tone}`}><span className="feature-icon"><Icon size={20}/></span><strong>{title}</strong><small>{text}</small></div> }
