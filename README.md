@@ -181,3 +181,46 @@ Google Calendar nên là V1.5 sau khi core behavior chứng minh được giá t
 - Security: RLS trên toàn bộ public product tables
 
 Supabase Security Advisor vẫn có cảnh báo **Leaked Password Protection Disabled**; Together V1 không dùng password login nên cảnh báo này không chặn zero-email flow hiện tại. Performance Advisor chỉ báo index chưa được sử dụng do product tables mới gần như chưa có dữ liệu.
+
+
+## Google account recovery (opt-in, not a replacement for anonymous identity)
+
+Existing users: open **Chúng mình → Bảo vệ tài khoản → Liên kết với Google**
+on the device that holds the anonymous session *before* changing devices.
+This uses `linkIdentity` on the current user; do not sign out or create a
+new identity while linking. New device: select **Đăng nhập bằng Google**.
+**Bắt đầu mới không cần Google** creates a different anonymous user ID,
+which will not have access to the previous couple.
+
+Manual authentication configuration (not applied by this PR):
+1. In Google Cloud create a Web OAuth client and register the exact Supabase
+   callback URL from the provider settings as an authorized redirect URI.
+2. In Supabase Authentication enable Google provider with Client ID/Secret,
+   enable Manual Linking, and allow
+   `https://derekdaydoi.github.io/Together/` as an application redirect URL.
+3. Test the flow end-to-end in Safari and on a physical iOS Home Screen PWA.
+   Check that the existing user's UUID, couple membership, schedules,
+   and weekly check-ins remain unchanged after linking and sign-in.
+Never put OAuth Client Secret, DB URLs with passwords, or GPG passphrases in git.
+
+## Backup (partial logical database export)
+
+`.github/workflows/keepalive-backup.yml` runs a limited auth endpoint probe
+and, if configured, creates a PostgreSQL 17 custom-format database dump,
+checks its format, GPG-encrypts it, and uploads an artifact with a 30-day
+retention period. Set GitHub Secrets `SUPABASE_DB_URL` (Supabase **Session
+pooler** URI) and `BACKUP_PASSPHRASE`. The optional Actions *variable*
+`SUPABASE_PUBLISHABLE_KEY` is used for the health check. Missing backup
+secrets produce a warning and **skip** the backup; they do NOT count as a
+successful backup. Verify artifacts after enabling it.
+
+This is not full disaster recovery: Storage objects, all project configuration,
+and selected ephemeral auth tables are absent. Practice restoring into an
+isolated PostgreSQL environment with `gpg --decrypt`, `pg_restore --list`,
+and a controlled test restore. Supabase Free-tier pausing depends on real
+database activity; a successful HTTP health probe alone does NOT keep
+the project from being paused. Monitor platform notifications.
+
+Historical SQL migration `20261001075015` in this branch was already applied
+to the Together production Supabase project; it is tracked here for consistency,
+not to be run manually again. Do not change production without review.
