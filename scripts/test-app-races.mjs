@@ -40,7 +40,7 @@ function remoteHarness() {
   const scope = vm.createContext({
     Error, structuredClone, supabase: {}, authUserId: 'A',
     authUserRef: { current: 'A' }, authEpochRef: { current: 0 },
-    mutationVersionRef: { current: 0 }, requestRefreshRef: { current: null },
+    mutationVersionRef: { current: 0 }, requestRefreshRef: { current: null }, pendingWritesRef: { current: 0 },
     sessionIsCurrent: () => scope.authEpochRef.current === 0,
     loadRemoteState: () => { const d = deferred(); loads.push(d); return d.promise },
     loadRemoteProfileState: () => { const d = deferred(); profiles.push(d); return d.promise },
@@ -275,4 +275,18 @@ test('late disabled-provider error does not overwrite a new session', async () =
   h.pending.resolve({ error: { code: 'anonymous_provider_disabled' } }); await work
   assert.equal(h.state.view, 'today')
   assert.equal(h.state.error, null)
+})
+
+test('a snapshot read while an optimistic write is in flight never replaces local state', async () => {
+  const h = remoteHarness(); await h.ready()
+  h.scope.pendingWritesRef.current = 1
+  h.mutate(d => { d.plans = [] })
+  assert.equal(h.loads.length, 1, 'no refresh is started while the write is pending')
+  h.refresh(); h.loads[1].resolve(snapshot()); await settle()
+  assert.equal(h.state.value.plans.length, 0, 'stale snapshot still contains the deleted plan')
+  h.scope.pendingWritesRef.current = 0
+  h.refresh(); h.loads[2].resolve(snapshot([])); await settle()
+  assert.equal(h.state.value.plans.length, 0)
+  assert.equal(h.state.status, 'ready')
+  h.cleanup()
 })

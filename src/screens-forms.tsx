@@ -16,10 +16,10 @@ const energyLabels=['Rất mệt','Hơi đuối','Bình thường','Khá ổn','
 const workMeta:Record<WorkType,{label:string;icon:typeof Coffee}>={office:{label:'Văn phòng',icon:BriefcaseBusiness},remote:{label:'Remote',icon:Laptop},shift:{label:'Ca làm',icon:Clock3},off:{label:'Nghỉ',icon:Coffee},other:{label:'Khác',icon:CalendarDays}}
 const availabilityMeta:Record<AvailabilityStatus,{label:string;className:string}>={available:{label:'Rảnh',className:'mint'},busy:{label:'Bận',className:'rose'},prefer_alone:{label:'Muốn ở một mình',className:'lilac'},want_together:{label:'Muốn gặp',className:'peach'}}
 
-export function DailyStateForm({state,updateState,onClose,notify}:CommonProps&{onClose:()=>void}){const date=todayDate(),current=state.dailyStates.find(x=>x.userId===state.me.id&&x.date===date),[energy,setEnergy]=useState(current?.energy??3),[closeness,setCloseness]=useState(current?.closeness??3),[note,setNote]=useState(current?.note??'');const save=async()=>{const next:DailyState={userId:state.me.id,date,energy,closeness,note};try{if(supabase)await saveRemoteDaily(state.id,next)}catch(e){notify(e instanceof Error?e.message:'Không thể lưu trạng thái.','normal');return}updateState(d=>upsertDailyState(d,next));notify('Đã cập nhật trạng thái hôm nay.');onClose()};return <Page className="form-page"><TopBack title="Hôm nay bạn thế nào?" onBack={onClose}/><div className="form-intro"><span className="eyebrow">{formatDate(date)}</span><h2>Một tín hiệu nhỏ giúp người kia hiểu bạn hơn.</h2><p>Không có đáp án đúng. Trạng thái này chỉ dành cho hôm nay.</p></div><Scale label="Mức năng lượng" value={energy} onChange={setEnergy} tone="energy" labels={energyLabels}/><Scale label="Mức muốn gần nhau" value={closeness} onChange={setCloseness} tone="heart" labels={closenessLabels}/><Field label="Chia sẻ thêm (tuỳ chọn)"><textarea rows={3} value={note} onChange={e=>setNote(e.target.value)} placeholder="Hôm nay hơi mệt, chỉ muốn ở cạnh nhau nhẹ nhàng."/></Field><div className="privacy-note"><MoonStar size={16}/> Chỉ người trong couple mới nhìn thấy trạng thái này.</div><button className="primary-button sticky-action" onClick={save}>Lưu trạng thái</button></Page>}
+export function DailyStateForm({state,updateState,onClose,notify,sync}:CommonProps&{onClose:()=>void}){const date=todayDate(),current=state.dailyStates.find(x=>x.userId===state.me.id&&x.date===date),[energy,setEnergy]=useState(current?.energy??3),[closeness,setCloseness]=useState(current?.closeness??3),[note,setNote]=useState(current?.note??'');const save=()=>{const next:DailyState={userId:state.me.id,date,energy,closeness,note:note.trim()||undefined},coupleId=state.id;updateState(d=>upsertDailyState(d,next));sync(()=>saveRemoteDaily(coupleId,next),'Không thể lưu trạng thái.');notify('Đã cập nhật trạng thái hôm nay.');onClose()};return <Page className="form-page"><TopBack title="Hôm nay bạn thế nào?" onBack={onClose}/><div className="form-intro"><span className="eyebrow">{formatDate(date)}</span><h2>Một tín hiệu nhỏ giúp người kia hiểu bạn hơn.</h2><p>Không có đáp án đúng. Trạng thái này chỉ dành cho hôm nay.</p></div><Scale label="Mức năng lượng" value={energy} onChange={setEnergy} tone="energy" labels={energyLabels}/><Scale label="Mức muốn gần nhau" value={closeness} onChange={setCloseness} tone="heart" labels={closenessLabels}/><Field label="Chia sẻ thêm (tuỳ chọn)"><textarea rows={3} value={note} onChange={e=>setNote(e.target.value)} placeholder="Hôm nay hơi mệt, chỉ muốn ở cạnh nhau nhẹ nhàng."/></Field><div className="privacy-note"><MoonStar size={16}/> Chỉ người trong couple mới nhìn thấy trạng thái này.</div><button className="primary-button sticky-action" onClick={save}>Lưu trạng thái</button></Page>}
 function Scale({label,value,onChange,tone,labels}:{label:string;value:number;onChange:(v:number)=>void;tone:string;labels:string[]}){const Icon=tone==='heart'?Heart:Zap;return <section className="scale-section"><div className="scale-label"><Icon size={18}/><strong>{label}</strong></div><div className={`scale-buttons ${tone}`}>{[1,2,3,4,5].map(n=><button key={n} className={n===value?'active':''} onClick={()=>onChange(n)}><Icon size={22} fill={n<=value?'currentColor':'none'}/></button>)}</div><strong className="scale-current">{labels[value-1]}</strong></section>}
 
-export function CheckinForm({ state, updateState, onClose, notify }: CommonProps & { onClose: () => void }) {
+export function CheckinForm({ state, updateState, onClose, notify, sync }: CommonProps & { onClose: () => void }) {
   const weekStart = weekStartISO()
   const current = state.checkins.find(x => x.userId === state.me.id && x.weekStart === weekStart)
   const partner = state.checkins.find(x => x.userId === state.partner.id && x.weekStart === weekStart)
@@ -29,18 +29,15 @@ export function CheckinForm({ state, updateState, onClose, notify }: CommonProps
   const [note, setNote] = useState(current?.note ?? '')
   const [busy, setBusy] = useState(false)
 
-  const save = async () => {
+  const save = () => {
     if (busy || locked) return
     setBusy(true)
     const next: WeeklyCheckin = { userId: state.me.id, weekStart, feeling, note: note.trim() || undefined }
-    try {
-      if (supabase) await saveRemoteCheckin(state.id, next)
-      updateState(draft => upsertCheckin(draft, next))
-      notify('Đã gửi check-in tuần này.')
-      onClose()
-    } catch (error) {
-      notify(error instanceof Error ? error.message : 'Không thể gửi check-in.', 'normal')
-    } finally { setBusy(false) }
+    const coupleId = state.id
+    updateState(draft => upsertCheckin(draft, next))
+    sync(() => saveRemoteCheckin(coupleId, next), 'Không thể gửi check-in.')
+    notify('Đã gửi check-in tuần này.')
+    onClose()
   }
 
   return <Page className="form-page checkin-page">
