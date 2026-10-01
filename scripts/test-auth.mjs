@@ -43,7 +43,7 @@ function harness() {
     setAnonymousBusy: value => { state.busy = value },
     setAuthError: value => { state.error = value },
     setView: value => { state.view = value },
-    localStorage: { setItem: () => { state.saved = true } },
+    localStorage: { setItem: () => { state.saved = true }, removeItem: () => {} },
   })
   vm.runInContext(handlerJS, scope)
   return { scope, state, pending, start: scope.startWithoutEmail }
