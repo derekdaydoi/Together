@@ -5,7 +5,8 @@ import type { CoupleState, SharedPlan } from './types'
 import { BottomNav, BrandMark, Shell, Signature } from './UI'
 import { loadDemoState, saveDemoState } from './lib/demoStore'
 import { isSupabaseConfigured, supabase } from './lib/supabase'
-import { loadRemoteProfileState, loadRemoteState, subscribeRemote } from './lib/remoteStore'
+import { loadRemoteProfileState, loadRemoteState, signInWithGoogle, subscribeRemote } from './lib/remoteStore'
+import { describeAuthError } from './lib/account'
 import { Onboarding, ProfileSetup, Connect } from './screens-setup'
 import { Today, Week, Us } from './screens-home'
 import { Plans } from './screens-plans'
@@ -41,6 +42,8 @@ export default function App(){
   const anonymousBusyRef=useRef(false)
   const [authError,setAuthError]=useState<string|null>(null)
   const [authUserId,setAuthUserId]=useState<string|null>(null)
+  const [googleBusy,setGoogleBusy]=useState(false)
+  const googleBusyRef=useRef(false)
   const authUserRef=useRef<string|null>(null)
   const authEpochRef=useRef(0)
   const mutationVersionRef=useRef(0)
@@ -78,6 +81,7 @@ export default function App(){
     supabase.auth.getSession().then(({data,error})=>{
       if(!alive||authEventObserved)return
       if(error)setAuthError(error.message)
+      if(data.session?.user?.is_anonymous===false)localStorage.removeItem('together-google-recovery')
       applySession(data.session?.user.id??null)
     }).catch(error=>{
       if(!alive||authEventObserved)return
@@ -86,6 +90,7 @@ export default function App(){
     })
     const{data:l}=supabase.auth.onAuthStateChange((event,session)=>{
       authEventObserved=true
+      if(session?.user?.is_anonymous===false)localStorage.removeItem('together-google-recovery')
       applySession(session?.user.id??null)
       if(session){localStorage.setItem('together-onboarded','1');setAuthError(null)}
       if(event==='SIGNED_OUT')setView('login')
@@ -190,6 +195,7 @@ export default function App(){
   const notify=(message:string,tone:Tone='success')=>{if(sessionIsCurrent())setToast({message,tone})}
   const startWithoutEmail=async()=>{
     if(!supabase||!sessionChecked||authUserRef.current||anonymousBusyRef.current)return
+    localStorage.removeItem('together-google-recovery')
     anonymousBusyRef.current=true
     const requestEpoch=authEpochRef.current
     setAnonymousBusy(true);setAuthError(null)
@@ -208,6 +214,23 @@ export default function App(){
       setView('login')
     }finally{anonymousBusyRef.current=false;setAnonymousBusy(false)}
   }
+  const startWithGoogle=async()=>{
+    if(!supabase||!sessionChecked||authUserRef.current||anonymousBusyRef.current||googleBusyRef.current)return
+    googleBusyRef.current=true
+    localStorage.setItem('together-google-recovery','1')
+    setGoogleBusy(true);setAuthError(null)
+    try{await signInWithGoogle()}
+    catch(error){
+      localStorage.removeItem('together-google-recovery')
+      setAuthError(describeAuthError(error))
+      googleBusyRef.current=false;setGoogleBusy(false)
+    }
+  }
+  useEffect(()=>{
+    const reset=(event:PageTransitionEvent)=>{if(event.persisted){googleBusyRef.current=false;setGoogleBusy(false)}}
+    window.addEventListener('pageshow',reset)
+    return()=>window.removeEventListener('pageshow',reset)
+  },[])
   const finishOnboarding=()=>{
     localStorage.setItem('together-onboarded','1')
     if(supabase){if(authUserRef.current)setView('profile');else void startWithoutEmail()}
@@ -219,11 +242,11 @@ export default function App(){
   const backToOnboarding=()=>{localStorage.removeItem('together-onboarded');setAuthError(null);setView('onboarding')}
 
   useEffect(()=>{
-    if(!supabase||!sessionChecked||authUserId||view==='onboarding'||authError)return
+    if(!supabase||!sessionChecked||authUserId||view==='onboarding'||view==='login'||localStorage.getItem('together-google-recovery')||authError)return
     void startWithoutEmail()
   },[sessionChecked,authUserId,view,authError])
 
-  if(view==='onboarding')return <Shell minimal><Onboarding onStart={finishOnboarding} busy={anonymousBusy||(isSupabaseConfigured&&!sessionChecked)}/>{authError&&<div className="auth-error" role="alert">{authError}</div>}</Shell>
+  if(view==='onboarding')return <Shell minimal><Onboarding onStart={finishOnboarding} busy={anonymousBusy||googleBusy||(isSupabaseConfigured&&!sessionChecked)} onGoogle={isSupabaseConfigured&&sessionChecked&&!authUserId?startWithGoogle:undefined} googleBusy={googleBusy}/>{authError&&<div className="auth-error" role="alert">{authError}</div>}</Shell>
 
   if(isSupabaseConfigured&&sessionReady&&remoteStatus!=='ready')return <Shell minimal><div className="auth-page">
     <div className="auth-brand"><BrandMark/></div>
@@ -238,7 +261,19 @@ export default function App(){
   </div></Shell>
 
   const shouldShowAuth=isSupabaseConfigured&&(!sessionChecked||!sessionReady)
-  if(shouldShowAuth)return <Shell minimal><div className="auth-page"><div className="auth-brand"><BrandMark/></div><div className="auth-copy"><span className="eyebrow">Không gian riêng của hai người</span><h1>Đang chuẩn bị Together trên thiết bị này.</h1><p>Không cần email hay mật khẩu. Together tạo một phiên riêng trên máy rồi đưa bạn thẳng tới bước kết nối người ấy.</p></div>{!sessionChecked||anonymousBusy||!authError?<div className="auth-card auth-loading"><span className="auth-spinner"/><p>Đang chuẩn bị kết nối…</p></div>:<div className="auth-card"><div className="auth-error" role="alert"><CircleAlert size={17}/><div><strong>Chưa thể bắt đầu</strong><span>{authError}</span></div></div><button className="primary-button" onClick={startWithoutEmail}>Thử lại</button><p className="form-hint">Lời mời ghép đôi vẫn được giữ trên thiết bị này trong lúc bạn thử lại.</p></div>}<Signature compact/></div></Shell>
+  if(shouldShowAuth)return <Shell minimal><div className="auth-page">
+    <div className="auth-brand"><BrandMark/></div>
+    <div className="auth-copy"><span className="eyebrow">Không gian riêng của hai người</span><h1>Chào mừng trở lại Together.</h1>
+      <p>Nếu đã liên kết Google, khôi phục tài khoản cũ để giữ nguyên dữ liệu. Nếu chưa, bắt đầu bằng danh tính riêng không cần email.</p></div>
+    {!sessionChecked ? <div className="auth-card auth-loading"><span className="auth-spinner"/>Đang kiểm tra phiên…</div>
+    : <div className="auth-card">
+      <button type="button" className="primary-button" disabled={googleBusy||anonymousBusy} onClick={()=>void startWithGoogle()}>{googleBusy?'Đang chuyển đến Google…':'Đăng nhập bằng Google'}</button>
+      <button type="button" className="secondary-button" disabled={googleBusy||anonymousBusy} onClick={()=>void startWithoutEmail()}>{anonymousBusy?'Đang tạo tài khoản…':'Bắt đầu mới không cần Google'}</button>
+      {authError&&<p className="auth-error" role="alert">{authError}</p>}
+      <p className="form-hint">Nếu đã sử dụng Together trước đây, hãy thử khôi phục trước khi tạo tài khoản mới.</p>
+    </div>}
+    <Signature compact/>
+  </div></Shell>
 
   const common={state,updateState,open,notify}
   const minimal=['login','profile','connect','daily','work','availability','plan','plan-detail','checkin'].includes(view)
