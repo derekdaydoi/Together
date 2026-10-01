@@ -9,7 +9,7 @@
     "prebuild": "node scripts/prepare-index.mjs",
     "build": "tsc -b && vite build",
     "test:logic": "node scripts/test-logic.mjs",
-    "test:auth": "node scripts/test-auth.mjs",
+    "test:auth": "node scripts/test-auth.mjs && node scripts/test-account.mjs",
     "preview": "vite preview"
   },
   "dependencies": {
