@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { supabase } from './lib/supabase'
 import { accountFromUser, describeAuthError } from './lib/account'
 import { linkGoogleAccount } from './lib/remoteStore'
+import { googleRecoveryEnabled } from './lib/featureFlags'
 
 export function AccountRecoveryCard() {
   const [anonymous, setAnonymous] = useState<boolean | null>(null)
@@ -20,7 +21,7 @@ export function AccountRecoveryCard() {
     }).catch(() => { if (alive) setError('Không kiểm tra được tài khoản. Hãy thử tải lại.') })
     return () => { alive = false }
   }, [])
-  if (!supabase) return null
+  if (!supabase || !googleRecoveryEnabled) return null
   const link = async () => {
     if (busy || !anonymous) return
     setBusy(true); setError(null)
