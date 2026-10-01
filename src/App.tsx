@@ -7,6 +7,7 @@ import { loadDemoState, saveDemoState } from './lib/demoStore'
 import { isSupabaseConfigured, supabase } from './lib/supabase'
 import { loadRemoteProfileState, loadRemoteState, signInWithGoogle, subscribeRemote } from './lib/remoteStore'
 import { describeAuthError } from './lib/account'
+import { googleRecoveryEnabled } from './lib/featureFlags'
 import { Onboarding, ProfileSetup, Connect } from './screens-setup'
 import { Today, Week, Us } from './screens-home'
 import { Plans } from './screens-plans'
@@ -215,7 +216,7 @@ export default function App(){
     }finally{anonymousBusyRef.current=false;setAnonymousBusy(false)}
   }
   const startWithGoogle=async()=>{
-    if(!supabase||!sessionChecked||authUserRef.current||anonymousBusyRef.current||googleBusyRef.current)return
+    if(!googleRecoveryEnabled||!supabase||!sessionChecked||authUserRef.current||anonymousBusyRef.current||googleBusyRef.current)return
     googleBusyRef.current=true
     localStorage.setItem('together-google-recovery','1')
     setGoogleBusy(true);setAuthError(null)
@@ -246,7 +247,7 @@ export default function App(){
     void startWithoutEmail()
   },[sessionChecked,authUserId,view,authError])
 
-  if(view==='onboarding')return <Shell minimal><Onboarding onStart={finishOnboarding} busy={anonymousBusy||googleBusy||(isSupabaseConfigured&&!sessionChecked)} onGoogle={isSupabaseConfigured&&sessionChecked&&!authUserId?startWithGoogle:undefined} googleBusy={googleBusy}/>{authError&&<div className="auth-error" role="alert">{authError}</div>}</Shell>
+  if(view==='onboarding')return <Shell minimal><Onboarding onStart={finishOnboarding} busy={anonymousBusy||googleBusy||(isSupabaseConfigured&&!sessionChecked)} onGoogle={googleRecoveryEnabled&&isSupabaseConfigured&&sessionChecked&&!authUserId?startWithGoogle:undefined} googleBusy={googleBusy}/>{authError&&<div className="auth-error" role="alert">{authError}</div>}</Shell>
 
   if(isSupabaseConfigured&&sessionReady&&remoteStatus!=='ready')return <Shell minimal><div className="auth-page">
     <div className="auth-brand"><BrandMark/></div>
@@ -264,13 +265,13 @@ export default function App(){
   if(shouldShowAuth)return <Shell minimal><div className="auth-page">
     <div className="auth-brand"><BrandMark/></div>
     <div className="auth-copy"><span className="eyebrow">Không gian riêng của hai người</span><h1>Chào mừng trở lại Together.</h1>
-      <p>Nếu đã liên kết Google, khôi phục tài khoản cũ để giữ nguyên dữ liệu. Nếu chưa, bắt đầu bằng danh tính riêng không cần email.</p></div>
+      {googleRecoveryEnabled?<p>Nếu đã liên kết Google, khôi phục tài khoản cũ để giữ nguyên dữ liệu. Nếu chưa, bắt đầu bằng danh tính riêng không cần email.</p>:<p>Không cần email hay mật khẩu. Together tạo danh tính riêng trên thiết bị này.</p>}</div>
     {!sessionChecked ? <div className="auth-card auth-loading"><span className="auth-spinner"/>Đang kiểm tra phiên…</div>
     : <div className="auth-card">
-      <button type="button" className="primary-button" disabled={googleBusy||anonymousBusy} onClick={()=>void startWithGoogle()}>{googleBusy?'Đang chuyển đến Google…':'Đăng nhập bằng Google'}</button>
+      {googleRecoveryEnabled&&<button type="button" className="primary-button" disabled={googleBusy||anonymousBusy} onClick={()=>void startWithGoogle()}>{googleBusy?'Đang chuyển đến Google…':'Đăng nhập bằng Google'}</button>}
       <button type="button" className="secondary-button" disabled={googleBusy||anonymousBusy} onClick={()=>void startWithoutEmail()}>{anonymousBusy?'Đang tạo tài khoản…':'Bắt đầu mới không cần Google'}</button>
       {authError&&<p className="auth-error" role="alert">{authError}</p>}
-      <p className="form-hint">Nếu đã sử dụng Together trước đây, hãy thử khôi phục trước khi tạo tài khoản mới.</p>
+      {googleRecoveryEnabled&&<p className="form-hint">Nếu đã sử dụng Together trước đây, hãy thử khôi phục trước khi tạo tài khoản mới.</p>}
     </div>}
     <Signature compact/>
   </div></Shell>
