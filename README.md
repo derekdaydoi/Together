@@ -224,3 +224,13 @@ the project from being paused. Monitor platform notifications.
 Historical SQL migration `20261001075015` in this branch was already applied
 to the Together production Supabase project; it is tracked here for consistency,
 not to be run manually again. Do not change production without review.
+
+
+### Google recovery release gate
+The Google recovery UI is **opt-in and disabled by default** in this release:
+`VITE_GOOGLE_RECOVERY_ENABLED=false` in the deployment workflow. This keeps
+the current anonymous no-email onboarding usable while Google Cloud OAuth
+Client ID/Secret are not configured. After the owner completes Google provider,
+Manual Linking, redirect allowlist, and iOS PWA end-to-end testing, deliberately
+set `VITE_GOOGLE_RECOVERY_ENABLED=true` in the deployment workflow and deploy
+as a separate, reviewed change. Do not turn it on before credentials work.
