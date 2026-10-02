@@ -94,8 +94,12 @@ button.agenda-row { cursor: pointer; }
 @media (max-width: 480px) { .week-columns { min-width: 0; } }
 .calendar-block.plan { min-height: 24px; }
 .calendar-block.plan em { font-size: 12px; line-height: 1.25; padding: 3px 5px; overflow-wrap: anywhere; word-break: normal; }
-.week-column:not(.selected) .calendar-block.plan em { display: none; }
+.week-column:not(.selected) .calendar-block.plan em { font-size: 9px; padding: 2px 1px; text-align: center; }
 
 /* Logo hearts: stronger colours. */
 .brand-hearts span { background: #d9606f; opacity: 1; }
 .brand-hearts span:last-child { background: #5f9a70; }
+
+/* Plan blocks on the grid show only the owner's short name; details open on tap. */
+.calendar-block.plan em { font-weight: 800; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.calendar-block.plan { cursor: pointer; }
