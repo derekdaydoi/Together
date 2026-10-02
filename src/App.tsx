@@ -3,6 +3,7 @@ import { Check, CircleAlert } from 'lucide-react'
 import type { View, Tone } from './appTypes'
 import type { CoupleState, SharedPlan } from './types'
 import { BottomNav, BrandMark, Shell, Signature } from './UI'
+import { PullToRefresh, SwipeBack } from './gestures'
 import { loadDemoState, saveDemoState } from './lib/demoStore'
 import { isSupabaseConfigured, supabase } from './lib/supabase'
 import { loadRemoteProfileState, loadRemoteState, signInWithGoogle, subscribeRemote } from './lib/remoteStore'
@@ -16,6 +17,15 @@ import { PlanDetail, PlanForm } from './screens-plan'
 import { AvailabilityForm, WorkForm } from './screens-schedule'
 
 type ToastState={message:string;tone?:Tone}
+
+// Our own validation errors are already Vietnamese; database and network
+// errors are not, so they collapse into the action's own message.
+const writeFailureMessage=(error:unknown,failure:string)=>{
+  const detail=error as {code?:string;message?:string}|null
+  if(error instanceof TypeError||/fetch|network/i.test(detail?.message??''))return `${failure} Kiểm tra kết nối mạng rồi thử lại.`
+  if(detail?.code||!detail?.message)return `${failure} Thay đổi đã được hoàn tác.`
+  return detail.message
+}
 
 // A remote account must never inherit the locally cached demo or another
 // account's profile, couple, schedules, and private check-ins.
@@ -48,7 +58,12 @@ export default function App(){
   const authUserRef=useRef<string|null>(null)
   const authEpochRef=useRef(0)
   const mutationVersionRef=useRef(0)
-  const requestRefreshRef=useRef<(()=>void)|null>(null)
+  const requestRefreshRef=useRef<(()=>Promise<void>|void)|null>(null)
+  // Writes run in the background after the screen already shows the result.
+  // While any is in flight, a server snapshot may predate it and must not win.
+  const pendingWritesRef=useRef(0)
+  const writeQueueRef=useRef<Promise<void>>(Promise.resolve())
+  const [loadedFor,setLoadedFor]=useState<string|null>(null)
   const sessionReady=!isSupabaseConfigured||Boolean(authUserId)
   const [sessionChecked,setSessionChecked]=useState(!isSupabaseConfigured)
   const [remoteStatus,setRemoteStatus]=useState<'loading'|'ready'|'error'>(isSupabaseConfigured?'loading':'ready')
@@ -56,6 +71,7 @@ export default function App(){
   const [remoteRetry,setRemoteRetry]=useState(0)
 
   useEffect(()=>{if(!isSupabaseConfigured)saveDemoState(state)},[state])
+  useEffect(()=>{if(remoteStatus==='ready'&&authUserId)setLoadedFor(authUserId)},[remoteStatus,authUserId])
   useEffect(()=>{if(!toast)return;const t=window.setTimeout(()=>setToast(null),2400);return()=>window.clearTimeout(t)},[toast])
   useEffect(()=>{
     if(!supabase)return
@@ -122,6 +138,8 @@ export default function App(){
             const fresh=await loadRemoteState()
             if(!isActive())return
             if(mutationVersionRef.current!==mutationVersion){refreshAgain=true;continue}
+            // The write's own completion requests a fresh read; this one is stale.
+            if(pendingWritesRef.current>0)return
             if(fresh){
               // React may evaluate this updater after a local mutation was queued.
               setState(old=>isActive()&&mutationVersionRef.current===mutationVersion?fresh:old)
@@ -156,7 +174,7 @@ export default function App(){
     }
     setRemoteStatus('loading')
     setRemoteError(null)
-    const requestRefresh=()=>{void refresh()}
+    const requestRefresh=()=>refresh()
     requestRefreshRef.current=requestRefresh
     void refresh()
     // Browser sleep/offline transitions can drop change events even when a
@@ -188,10 +206,26 @@ export default function App(){
     // another read even if Realtime misses the corresponding mutation event.
     mutationVersionRef.current++
     setState(old=>{if(!sessionIsCurrent())return old;const draft=structuredClone(old);fn(draft);return draft})
-    requestRefreshRef.current?.()
+    if(pendingWritesRef.current===0)requestRefreshRef.current?.()
+  }
+  // Optimistic write: the caller already applied the change locally. On
+  // failure the next server snapshot restores the truth and a toast explains.
+  const sync=(task:()=>Promise<unknown>,failure:string)=>{
+    if(!supabase||!sessionIsCurrent())return
+    pendingWritesRef.current++
+    // Serialize writes: a delete must never overtake the insert it undoes.
+    const run=writeQueueRef.current.then(task)
+    writeQueueRef.current=run.then(()=>undefined,()=>undefined)
+    void run.catch(error=>{if(sessionIsCurrent())setToast({message:writeFailureMessage(error,failure),tone:'normal'})})
+      .finally(()=>{
+        pendingWritesRef.current=Math.max(0,pendingWritesRef.current-1)
+        if(!sessionIsCurrent()||pendingWritesRef.current>0)return
+        mutationVersionRef.current++
+        void requestRefreshRef.current?.()
+      })
   }
   const navigate=(next:View)=>{if(sessionIsCurrent())setView(next)}
-  const open=(next:View,from:View=view)=>{if(!sessionIsCurrent())return;if(next==='plan'){setEditingPlan(null);setSuggestedPlan(null)}setPreviousView(from);window.scrollTo({top:0,behavior:'smooth'});setView(next)}
+  const open=(next:View,from:View=view)=>{if(!sessionIsCurrent())return;if(next==='plan'){setEditingPlan(null);setSuggestedPlan(null)}setPreviousView(from);window.scrollTo({top:0});setView(next)}
   const suggestPlan=(date:string,start:string,end:string,from:View)=>{open('plan',from);setSuggestedPlan({date,start,end})}
   const notify=(message:string,tone:Tone='success')=>{if(sessionIsCurrent())setToast({message,tone})}
   const startWithoutEmail=async()=>{
@@ -249,7 +283,8 @@ export default function App(){
 
   if(view==='onboarding')return <Shell minimal><Onboarding onStart={finishOnboarding} busy={anonymousBusy||googleBusy||(isSupabaseConfigured&&!sessionChecked)} onGoogle={googleRecoveryEnabled&&isSupabaseConfigured&&sessionChecked&&!authUserId?startWithGoogle:undefined} googleBusy={googleBusy}/>{authError&&<div className="auth-error" role="alert">{authError}</div>}</Shell>
 
-  if(isSupabaseConfigured&&sessionReady&&remoteStatus!=='ready')return <Shell minimal><div className="auth-page">
+  const hasLoaded=Boolean(authUserId)&&loadedFor===authUserId
+  if(isSupabaseConfigured&&sessionReady&&(remoteStatus==='loading'||(remoteStatus==='error'&&!hasLoaded)))return <Shell minimal><div className="auth-page">
     <div className="auth-brand"><BrandMark/></div>
     <div className="auth-copy"><span className="eyebrow">Đồng bộ không gian chung</span>
       <h1>{remoteStatus==='loading'?'Đang kết nối hai người…':'Chưa tải được dữ liệu của hai bạn.'}</h1>
@@ -276,13 +311,26 @@ export default function App(){
     <Signature compact/>
   </div></Shell>
 
-  const common={state,updateState,open,notify}
+  const common={state,updateState,open,notify,sync}
+  const refreshNow=async()=>{await Promise.all([requestRefreshRef.current?.(),new Promise(resolve=>window.setTimeout(resolve,600))])}
+  const back=():(()=>void)|undefined=>{
+    switch(view){
+      case 'daily':case 'work':case 'availability':case 'checkin':case 'plan-detail':return()=>navigate(previousView)
+      case 'plan':return()=>{if(sessionIsCurrent()){setEditingPlan(null);setView(previousView)}}
+      case 'connect':return()=>navigate('profile')
+      default:return undefined
+    }
+  }
+  const onBack=back()
+  const isTab=['today','week','plans','us'].includes(view)
   const minimal=['login','profile','connect','daily','work','availability','plan','plan-detail','checkin'].includes(view)
   return <Shell minimal={minimal}>
+    <SwipeBack key={view} onBack={onBack}><PullToRefresh enabled={isTab} onRefresh={refreshNow}>
+    {remoteStatus==='error'&&hasLoaded&&<div className="sync-banner" role="status"><CircleAlert size={16} aria-hidden="true"/><span>Mất kết nối. Đang hiện dữ liệu đã tải.</span><button type="button" onClick={()=>void requestRefreshRef.current?.()}>Thử lại</button></div>}
     {view==='profile'&&<ProfileSetup key={authUserId??'demo'} {...common} onBack={backToOnboarding} onContinue={()=>navigate(state.id?'today':'connect')}/>}
     {view==='connect'&&<Connect key={authUserId??'demo'} {...common} onBack={()=>navigate('profile')} onDone={finishCoupleSetup}/>}
     {view==='today'&&<Today {...common} onPickSuggestion={(date,start,end)=>suggestPlan(date,start,end,'today')}/>}
-    {view==='week'&&<Week {...common} onPickSuggestion={(date,start,end)=>suggestPlan(date,start,end,'week')}/>}
+    {view==='week'&&<Week {...common} onPickSuggestion={(date,start,end)=>suggestPlan(date,start,end,'week')} onSelectPlan={plan=>{setSelectedPlan(plan);open('plan-detail','week')}}/>}
     {view==='plans'&&<Plans {...common} onSelect={plan=>{setSelectedPlan(plan);open('plan-detail','plans')}}/>} 
     {view==='us'&&<Us {...common}/>} 
     {view==='daily'&&<DailyStateForm {...common} onClose={()=>navigate(previousView)}/>}
@@ -291,7 +339,8 @@ export default function App(){
     {view==='plan'&&<PlanForm {...common} initialPlan={editingPlan??undefined} suggestedSlot={suggestedPlan??undefined} onClose={()=>{if(sessionIsCurrent()){setEditingPlan(null);setView(previousView)}}}/>}
     {view==='plan-detail'&&selectedPlan&&<PlanDetail plan={selectedPlan} {...common} onClose={()=>navigate(previousView)} onEdit={()=>{if(!sessionIsCurrent())return;setEditingPlan(state.plans.find(plan=>plan.id===selectedPlan.id)??selectedPlan);setPreviousView('plan-detail');setView('plan')}}/>}
     {view==='checkin'&&<CheckinForm {...common} onClose={()=>navigate(previousView)}/>}
-    {['today','week','plans','us'].includes(view)&&<BottomNav active={view} onChange={v=>setView(v)}/>} 
+    </PullToRefresh></SwipeBack>
+    {isTab&&<BottomNav active={view} onChange={v=>setView(v)}/>} 
     {toast&&<div className={`toast ${toast.tone==='success'?'success':''}`}><Check size={16}/>{toast.message}</div>}
   </Shell>
 }

@@ -6,4 +6,6 @@ export type CommonProps = {
   updateState: (fn: (draft: CoupleState) => void) => void
   open: (next: View, from?: View) => void
   notify: (message: string, tone?: Tone) => void
+  /** Run a server write in the background after the UI already shows its result. */
+  sync: (task: () => Promise<unknown>, failure: string) => void
 }

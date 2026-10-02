@@ -1,7 +1,9 @@
 import { useEffect, useRef, useState } from 'react'
 import { ArrowRight, BriefcaseBusiness, CalendarDays, ChevronLeft, ChevronRight, Clock3, Coffee, Copy, Share2, Heart, MapPin, Plus, RefreshCcw, Settings, Sparkles, Sun, Zap, Camera, Laptop, Home, Clock } from 'lucide-react'
 import type { CommonProps } from './appTypes'
-import type { CoupleState, DailyState, SharedPlan, WorkSchedule, WorkType } from './types'
+import type { AvailabilityBlock, AvailabilityStatus, CoupleState, DailyState, SharedPlan, WorkSchedule, WorkType } from './types'
+import { SwipeRow } from './gestures'
+import { removeAvailability, removeWork } from './screens-schedule'
 import { AppHeader, Avatar, Page } from './UI'
 import { overlapSuggestion, workOccursOn, workOnDate } from './lib/insights'
 import { addDaysISO, localISODate, weekStartISO } from './lib/dates'
@@ -28,12 +30,15 @@ function Metric({icon:Icon,label,value,color}:{icon:typeof Heart;label:string;va
 }
 function Quick({icon:Icon,label,tone,onClick}:{icon:typeof Heart;label:string;tone:string;onClick:()=>void}){return <button className={`quick-action ${tone}`} onClick={onClick}><Icon size={20}/><span>{label}</span><ChevronRight size={17}/></button>}
 
-export function Week({state,open,onPickSuggestion}:CommonProps&{onPickSuggestion?:(date:string,start:string,end:string)=>void}){
+export function Week({state,open,onPickSuggestion,onSelectPlan,updateState,sync,notify}:CommonProps&{onPickSuggestion?:(date:string,start:string,end:string)=>void;onSelectPlan?:(plan:SharedPlan)=>void}){
   const [weekOffset,setWeekOffset]=useState(0)
   const weekStart=addDaysISO(getWeekStart(),weekOffset*7)
   const days=daysFrom(weekStart)
   const today=todayDate()
+  const [picked,setPicked]=useState(today)
+  const selected=days.includes(picked)?picked:(days.includes(today)?today:days[0])
   const suggestions=days.map(date=>({date,insight:overlapSuggestion(state,date)})).filter(x=>x.insight)
+  const moveWeek=(delta:number)=>{const next=delta===0?0:weekOffset+delta;setWeekOffset(next);setPicked(next===0?today:addDaysISO(getWeekStart(),next*7))}
   return <Page className="week-page with-nav">
     <AppHeader state={state}/>
     <div className="page-heading-row">
@@ -45,21 +50,24 @@ export function Week({state,open,onPickSuggestion}:CommonProps&{onPickSuggestion
       <button className="icon-button" aria-label="Thêm lịch rảnh" onClick={()=>open('availability','week')}><Plus size={22}/></button>
     </div>
     <div className="week-navigator">
-      <button type="button" aria-label="Tuần trước" onClick={()=>setWeekOffset(v=>v-1)}><ChevronLeft size={17}/></button>
-      <button type="button" className="week-current" onClick={()=>setWeekOffset(0)} disabled={weekOffset===0}>Tuần này</button>
-      <button type="button" aria-label="Tuần sau" onClick={()=>setWeekOffset(v=>v+1)}><ChevronRight size={17}/></button>
+      <button type="button" aria-label="Tuần trước" onClick={()=>moveWeek(-1)}><ChevronLeft size={17}/></button>
+      <button type="button" className="week-current" onClick={()=>moveWeek(0)} disabled={weekOffset===0}>Tuần này</button>
+      <button type="button" aria-label="Tuần sau" onClick={()=>moveWeek(1)}><ChevronRight size={17}/></button>
     </div>
-    <div className="week-strip">{days.map(d=><div key={d} className={'day-pill '+(d===today?'active':'')}>
+    <div className="week-strip" role="group" aria-label="Chọn ngày">{days.map(d=>{const count=dayAgenda(state,d).length;return <button type="button" key={d} aria-pressed={d===selected} onClick={()=>setPicked(d)}
+      className={'day-pill'+(d===today?' today':'')+(d===selected?' active':'')}>
       <small>{new Intl.DateTimeFormat('vi-VN',{weekday:'short'}).format(new Date(d+'T12:00'))}</small>
       <strong>{new Date(d+'T12:00').getDate()}</strong>
-    </div>)}</div>
+      <i className={count?'day-dot':'day-dot empty'} aria-label={count?`${count} mục`:undefined}/>
+    </button>})}</div>
     <div className="calendar-legend">
       <span><i className="legend-dot me"/>Bạn</span>
-      <span><i className="legend-dot partner"/>Người ấy</span>
-      <span><i className="legend-dot together"/>Cùng rảnh</span>
+      <span><i className="legend-dot partner"/>{state.partner.displayName}</span>
+      <span><i className="legend-dot plan"/>Kế hoạch</span>
       <span><i className="legend-dot work"/>Đi làm</span>
     </div>
-    <WeekGrid state={state} days={days}/>
+    <WeekGrid state={state} days={days} selected={selected} onSelectDay={setPicked}/>
+    <DayAgenda state={state} date={selected} updateState={updateState} sync={sync} notify={notify} onSelectPlan={onSelectPlan}/>
     <section className="recommendation-panel">
       <div className="recommendation-title"><Sparkles size={19}/><div>
         <span className="eyebrow">Khung giờ phù hợp tuần này</span>
@@ -77,7 +85,54 @@ export function Week({state,open,onPickSuggestion}:CommonProps&{onPickSuggestion
     </div>
   </Page>
 }
-function WeekGrid({state,days}:{state:CoupleState;days:string[]}){const hours=[8,10,12,14,16,18,20,22];const style=(start:string,end:string)=>{const[sh,sm]=start.split(':').map(Number),[eh,em]=end.split(':').map(Number),startM=sh*60+sm,endM=eh*60+em,top=((startM-480)/840)*100,height=Math.max(3,((endM-startM)/840)*100);return{top:`${Math.max(0,top)}%`,height:`${Math.min(100-Math.max(0,top),height)}%`}};return <div className="week-grid-wrap"><div className="time-axis">{hours.map(h=><span key={h} style={{top:`${((h-8)/14)*100}%`}}>{String(h).padStart(2,'0')}:00</span>)}</div><div className="week-columns">{days.map(day=><div className="week-column" key={day}>{hours.map(h=><i key={h} style={{top:`${((h-8)/14)*100}%`}}/>)}{state.availability.filter(x=>x.date===day).map(b=><span key={b.id} className={`calendar-block ${b.userId===state.me.id?'me':'partner'} ${b.status}`} style={style(b.start,b.end)}/>)}{state.workSchedules.filter(w=>w.type!=='off'&&workOccursOn(w,day)).map(w=><span key={`work-${w.id}`} className={`calendar-block work ${w.userId===state.me.id?'me':'partner'}`} style={style(w.start,w.end)}/>)}</div>)}</div></div>}
+
+const availabilityLabel:Record<AvailabilityStatus,string>={available:'Rảnh',busy:'Bận',prefer_alone:'Muốn ở một mình',want_together:'Muốn gặp'}
+type AgendaItem={key:string;start:string;end:string;kind:'plan'|'work'|'availability';owner:'me'|'partner'|'both';title:string;detail?:string;plan?:SharedPlan;work?:WorkSchedule;block?:AvailabilityBlock;tone:string}
+
+// Everything both people have on one day, plans included. Partner items are
+// shown in full: the couple space is shared by design.
+function dayAgenda(state:CoupleState,date:string):AgendaItem[]{
+  const owner=(userId:string)=>userId===state.me.id?'me' as const:'partner' as const
+  const items:AgendaItem[]=[
+    ...state.plans.filter(p=>p.date===date&&p.status!=='cancelled').map(p=>({key:`plan-${p.id}`,start:p.start,end:p.end,kind:'plan' as const,owner:'both' as const,
+      title:p.title,detail:[p.type==='soft'?'Kế hoạch mềm':p.status==='proposed'?'Chờ xác nhận':'Đã chốt',p.location].filter(Boolean).join(' · '),plan:p,tone:`plan ${p.type} ${p.status}`})),
+    ...state.workSchedules.filter(w=>w.type!=='off'&&workOccursOn(w,date)).map(w=>({key:`work-${w.id}`,start:w.start,end:w.end,kind:'work' as const,owner:owner(w.userId),
+      title:workTypeMeta[w.type].label,detail:[w.note!==workTypeMeta[w.type].label?w.note:'',w.repeatsWeekly?'Lặp hàng tuần':''].filter(Boolean).join(' · ')||undefined,work:w,tone:`work ${owner(w.userId)}`})),
+    ...state.workSchedules.filter(w=>w.type==='off'&&workOccursOn(w,date)).map(w=>({key:`off-${w.id}`,start:w.start,end:w.end,kind:'work' as const,owner:owner(w.userId),
+      title:'Nghỉ làm',detail:w.note||undefined,work:w,tone:`off ${owner(w.userId)}`})),
+    ...state.availability.filter(b=>b.date===date).map(b=>({key:`av-${b.id}`,start:b.start,end:b.end,kind:'availability' as const,owner:owner(b.userId),
+      title:availabilityLabel[b.status],detail:b.note||undefined,block:b,tone:`${owner(b.userId)} ${b.status}`})),
+  ]
+  return items.sort((a,b)=>a.start.localeCompare(b.start)||a.end.localeCompare(b.end))
+}
+
+function DayAgenda({state,date,updateState,sync,notify,onSelectPlan}:Pick<CommonProps,'state'|'updateState'|'sync'|'notify'>&{date:string;onSelectPlan?:(plan:SharedPlan)=>void}){
+  const items=dayAgenda(state,date)
+  const who=(item:AgendaItem)=>item.owner==='both'?'Cả hai':item.owner==='me'?'Bạn':state.partner.displayName
+  const remove=(item:AgendaItem)=>{
+    if(item.work){removeWork(state,updateState,sync,item.work);notify(item.work.repeatsWeekly?'Đã xóa cả chuỗi lịch làm việc.':'Đã xóa lịch làm việc.')}
+    else if(item.block){removeAvailability(state,updateState,sync,item.block);notify('Đã xóa khung giờ.')}
+  }
+  const body=(item:AgendaItem)=><>
+    <span className={`agenda-bar ${item.tone}`} aria-hidden="true"/>
+    <span className="agenda-time"><b>{item.start}</b><small>{item.end}</small></span>
+    <span className="agenda-main"><strong>{item.title}</strong>{item.detail&&<small>{item.detail}</small>}</span>
+    <span className={`agenda-owner ${item.owner}`}>{who(item)}</span>
+  </>
+  return <section className="day-agenda" aria-labelledby="day-agenda-title">
+    <h3 id="day-agenda-title">{formatDate(date,{weekday:'long',day:'numeric',month:'long'})}</h3>
+    {items.length===0?<p className="agenda-empty">Chưa có lịch nào trong ngày này.</p>:<ul>{items.map(item=><li key={item.key}>
+      {item.plan
+        ?<button type="button" className="agenda-row" onClick={()=>item.plan&&onSelectPlan?.(item.plan)}>{body(item)}<ChevronRight size={16} aria-hidden="true"/></button>
+        :item.owner==='me'
+          ?<SwipeRow actionLabel={item.work?.repeatsWeekly?'Xoá chuỗi':'Xoá'} onAction={()=>remove(item)}><div className="agenda-row">{body(item)}</div></SwipeRow>
+          :<div className="agenda-row">{body(item)}</div>}
+    </li>)}</ul>}
+    {items.some(item=>item.owner==='me'&&!item.plan)&&<p className="agenda-hint">Vuốt sang trái trên lịch của bạn để xoá.</p>}
+  </section>
+}
+
+function WeekGrid({state,days,selected,onSelectDay}:{state:CoupleState;days:string[];selected:string;onSelectDay:(day:string)=>void}){const hours=[8,10,12,14,16,18,20,22];const style=(start:string,end:string)=>{const[sh,sm]=start.split(':').map(Number),[eh,em]=end.split(':').map(Number),startM=sh*60+sm,endM=eh*60+em,top=((startM-480)/840)*100,height=Math.max(3,((endM-startM)/840)*100);return{top:`${Math.max(0,top)}%`,height:`${Math.min(100-Math.max(0,top),height)}%`}};return <div className="week-grid-wrap"><div className="time-axis">{hours.map(h=><span key={h} style={{top:`${((h-8)/14)*100}%`}}>{String(h).padStart(2,'0')}:00</span>)}</div><div className="week-columns">{days.map(day=><button type="button" className={`week-column${day===selected?' selected':''}`} key={day} aria-label={`Xem lịch ${formatDate(day,{weekday:'long',day:'numeric',month:'numeric'})}`} onClick={()=>onSelectDay(day)}>{hours.map(h=><i key={h} style={{top:`${((h-8)/14)*100}%`}}/>)}{state.availability.filter(x=>x.date===day).map(b=><span key={b.id} className={`calendar-block ${b.userId===state.me.id?'me':'partner'} ${b.status}`} style={style(b.start,b.end)}/>)}{state.workSchedules.filter(w=>w.type!=='off'&&workOccursOn(w,day)).map(w=><span key={`work-${w.id}`} className={`calendar-block work ${w.userId===state.me.id?'me':'partner'}`} style={style(w.start,w.end)}/>)}{state.plans.filter(p=>p.date===day&&p.status!=='cancelled').map(p=><span key={`plan-${p.id}`} className={`calendar-block plan ${p.type} ${p.status}`} style={style(p.start,p.end)}><em>{p.title}</em></span>)}</button>)}</div></div>}
 
 export function Us({state,updateState,open,notify}:CommonProps){
   const [inviteNow,setInviteNow]=useState(Date.now)
@@ -152,7 +207,7 @@ export function Us({state,updateState,open,notify}:CommonProps){
     }catch{if(inviteMounted.current)setInviteFeedback('Chưa tạo được lời mời mới. Hãy tải lại để kiểm tra kết nối và quyền chủ sở hữu.')}
     finally{inviteLock.current=false;if(inviteMounted.current)setInviteBusy(false)}
   }
-const [privacyExpanded,setPrivacyExpanded]=useState(false);const fileRef=useRef<HTMLInputElement>(null);const updateAvatar=async(file?:File)=>{if(!file)return;try{const blob=await compressAvatar(file);let avatarUrl=await blobToDataUrl(blob),avatarPath=state.me.avatarPath;if(supabase){const{data:userData}=await supabase.auth.getUser(),userId=userData.user?.id;if(!userId||userId!==state.me.id)throw new Error('Tài khoản đã thay đổi. Hãy tải lại hồ sơ.');{avatarPath=`${userId}/avatar-${Date.now()}.webp`;const{error}=await supabase.storage.from('avatars').upload(avatarPath,blob,{contentType:'image/webp',upsert:false});if(error)throw error;const signed=await supabase.storage.from('avatars').createSignedUrl(avatarPath,3600);avatarUrl=signed.data?.signedUrl??avatarUrl;await saveRemoteProfile(state.me.displayName,avatarPath,state.me.id)}}updateState(d=>{d.me.avatarUrl=avatarUrl;d.me.avatarPath=avatarPath});notify('Đã đổi ảnh đại diện.')}catch(e){notify(e instanceof Error?e.message:'Không thể đổi ảnh.','normal')}};const my=state.checkins.find(x=>x.userId===state.me.id&&x.weekStart===getWeekStart()),partner=state.checkins.find(x=>x.userId===state.partner.id&&x.weekStart===getWeekStart());return <Page className="us-page with-nav"><AppHeader state={state}/><div className="us-hero"><div className="couple-avatar-stack"><Avatar profile={state.me} size="lg"/><Avatar profile={state.partner} size="lg"/></div><h1>{state.name}</h1><p>Hai cuộc sống khác nhau. Một nhịp chung.</p></div><section className="settings-card"><button onClick={()=>fileRef.current?.click()}><Camera size={18}/><div><strong>Ảnh đại diện của bạn</strong><small>Tải ảnh mới từ thiết bị</small></div><ChevronRight size={18}/></button><input hidden ref={fileRef} type="file" accept="image/*" onChange={e=>updateAvatar(e.target.files?.[0])}/><button onClick={()=>open('daily','us')}><Zap size={18}/><div><strong>Trạng thái hôm nay</strong><small>Energy + closeness</small></div><ChevronRight size={18}/></button><button onClick={()=>open('checkin','us')}><Heart size={18}/><div><strong>Weekly check-in</strong><small>{my?'Bạn đã trả lời tuần này':'Chưa trả lời tuần này'}</small></div><ChevronRight size={18}/></button><button onClick={()=>setPrivacyExpanded(value=>!value)}><Settings size={18}/><div><strong>Quyền riêng tư</strong><small>Couple-only · không public profile</small></div><ChevronRight size={18}/></button></section>{privacyExpanded&&<section className="privacy-note"><Heart size={16}/> Chỉ thành viên trong couple đọc được lịch, năng lượng và kế hoạch. Check-in chỉ hiện khi cả hai cùng trả lời. Ảnh được lưu trong private Storage.</section>}<section className="reveal-card"><span className="eyebrow">Check-in tuần này</span><h3>Mỗi người cảm thấy thế nào?</h3>{my&&partner?<div className="checkin-reveal"><Feeling feeling={my.feeling} name={state.me.displayName}/><Feeling feeling={partner.feeling} name={state.partner.displayName}/></div>:<p>Chỉ reveal khi cả hai đã trả lời. Không tạo áp lực trả lời giống nhau.</p>}</section><AccountRecoveryCard/><section className="invite-card" aria-labelledby="us-invite-heading" aria-busy={inviteBusy}>
+const [privacyExpanded,setPrivacyExpanded]=useState(false);const fileRef=useRef<HTMLInputElement>(null);const updateAvatar=async(file?:File)=>{if(!file)return;try{const blob=await compressAvatar(file);let avatarUrl=await blobToDataUrl(blob),avatarPath=state.me.avatarPath;if(supabase){const{data:userData}=await supabase.auth.getUser(),userId=userData.user?.id;if(!userId||userId!==state.me.id)throw new Error('Tài khoản đã thay đổi. Hãy tải lại hồ sơ.');{avatarPath=`${userId}/avatar-${Date.now()}.webp`;const{error}=await supabase.storage.from('avatars').upload(avatarPath,blob,{contentType:'image/webp',upsert:false});if(error)throw error;const signed=await supabase.storage.from('avatars').createSignedUrl(avatarPath,3600);avatarUrl=signed.data?.signedUrl??avatarUrl;await saveRemoteProfile(state.me.displayName,avatarPath,state.me.id)}}updateState(d=>{d.me.avatarUrl=avatarUrl;d.me.avatarPath=avatarPath});notify('Đã đổi ảnh đại diện.')}catch(e){notify(e instanceof Error?e.message:'Không thể đổi ảnh.','normal')}};const my=state.checkins.find(x=>x.userId===state.me.id&&x.weekStart===getWeekStart()),partner=state.checkins.find(x=>x.userId===state.partner.id&&x.weekStart===getWeekStart());return <Page className="us-page with-nav"><AppHeader state={state}/><div className="us-hero"><div className="couple-avatar-stack"><Avatar profile={state.me} size="lg"/><Avatar profile={state.partner} size="lg"/></div><h1>{state.name}</h1><p>Hai cuộc sống khác nhau. Một nhịp chung.</p></div><section className="settings-card"><button onClick={()=>fileRef.current?.click()}><Camera size={18}/><div><strong>Ảnh đại diện của bạn</strong><small>Tải ảnh mới từ thiết bị</small></div><ChevronRight size={18}/></button><input hidden ref={fileRef} type="file" accept="image/*" onChange={e=>updateAvatar(e.target.files?.[0])}/><button onClick={()=>open('daily','us')}><Zap size={18}/><div><strong>Trạng thái hôm nay</strong><small>Energy + closeness</small></div><ChevronRight size={18}/></button><button onClick={()=>open('checkin','us')}><Heart size={18}/><div><strong>Weekly check-in</strong><small>{my?'Bạn đã trả lời tuần này':'Chưa trả lời tuần này'}</small></div><ChevronRight size={18}/></button><button onClick={()=>setPrivacyExpanded(value=>!value)}><Settings size={18}/><div><strong>Quyền riêng tư</strong><small>Couple-only · không public profile</small></div><ChevronRight size={18}/></button></section>{privacyExpanded&&<section className="privacy-note"><Heart size={16}/> Chỉ thành viên trong couple đọc được lịch, năng lượng và kế hoạch. Check-in chỉ hiện khi cả hai cùng trả lời. Ảnh được lưu trong private Storage.</section>}<section className="reveal-card"><span className="eyebrow">Check-in tuần này</span><h3>Mỗi người cảm thấy thế nào?</h3>{my&&partner?<div className="checkin-reveal"><Feeling feeling={my.feeling} name={state.me.displayName} note={my.note}/><Feeling feeling={partner.feeling} name={state.partner.displayName} note={partner.note}/></div>:<p>Chỉ reveal khi cả hai đã trả lời. Không tạo áp lực trả lời giống nhau.</p>}</section><AccountRecoveryCard/><section className="invite-card" aria-labelledby="us-invite-heading" aria-busy={inviteBusy}>
   <span className="eyebrow" id="us-invite-heading">Kết nối của hai người</span>
   {!waiting?<p>Hai bạn đã kết nối. Lời mời cũ không còn dùng được.</p>:activeInvite?<>
     <label htmlFor="us-invite-code">Mã mời dùng một lần</label>
@@ -168,4 +223,4 @@ const [privacyExpanded,setPrivacyExpanded]=useState(false);const fileRef=useRef<
   {!isSupabaseConfigured&&<p>Đây là bản demo trên thiết bị. Kết nối người thật cần đăng nhập.</p>}
   <p role="status" aria-live="polite">{inviteFeedback}</p>
 </section>{!isSupabaseConfigured&&<button className="text-button danger" onClick={()=>{resetDemoState();localStorage.removeItem('together-onboarded');location.reload()}}><RefreshCcw size={15}/> Reset bản demo</button>}</Page>}
-function Feeling({feeling,name}:{feeling:1|2|3;name:string}){const map={1:['Quá ít','☹'],2:['Vừa đủ','☺'],3:['Quá nhiều','◔']} as const;return <div className={`feeling-badge feeling-${feeling}`}><span>{map[feeling][1]}</span><div><strong>{name}</strong><small>{map[feeling][0]}</small></div></div>}
+function Feeling({feeling,name,note}:{feeling:1|2|3;name:string;note?:string}){const map={1:['Quá ít','☹'],2:['Vừa đủ','☺'],3:['Quá nhiều','◔']} as const;return <div className={`feeling-badge feeling-${feeling}`}><span>{map[feeling][1]}</span><div><strong>{name}</strong><small>{map[feeling][0]}</small>{note&&<p className="feeling-note">“{note}”</p>}</div></div>}
