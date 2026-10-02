@@ -144,7 +144,7 @@ export function PlanDetail({ plan, state, updateState, notify, sync, onClose, on
 
   return <Page className="detail-page">
     <TopBack title="Chi tiết kế hoạch" onBack={onClose}/>
-    <div className="plan-detail-hero"><div className="cinema-illustration"><span/><span/><span/><i/></div>
+    <div className="plan-detail-hero">
       <div className="detail-title"><div>
         <span className={`status-chip ${current.type}`}>{current.status === 'cancelled' ? 'Đã huỷ' : current.type === 'soft' ? 'Kế hoạch mềm' : isHardPending ? 'Chờ xác nhận' : 'Đã xác nhận'}</span>
         <h1>{current.title}</h1>

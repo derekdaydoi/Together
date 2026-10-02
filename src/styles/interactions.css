@@ -1,4 +1,4 @@
-/* Gestures, calendar agenda and sync feedback. Imported last. */
+﻿/* Gestures, calendar agenda and sync feedback. Imported last. */
 
 html { scroll-behavior: auto; }
 .sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0; }
@@ -79,3 +79,23 @@ button.agenda-row { cursor: pointer; }
 .feeling-note { margin: 4px 0 0; font-size: 12px; line-height: 1.4; color: #5c534e; overflow-wrap: anywhere; }
 
 @media (prefers-reduced-motion: reduce) { .ptr-indicator.spinning svg { animation: none; } }
+
+/* Per-plan colours (see lib/planColor.ts). */
+.plan-date.tinted { background: var(--pc-bg); color: var(--pc-ink); }
+.calendar-block.plan.tinted { background: var(--pc-bg); border-color: var(--pc-bd); }
+.calendar-block.plan.tinted.hard.proposed { background: repeating-linear-gradient(135deg, var(--pc-bg), var(--pc-bg) 4px, #fff 4px, #fff 7px); }
+.calendar-block.plan.tinted em { color: var(--pc-ink); }
+.agenda-bar.plan.tinted { background: var(--pc-bar); }
+
+/* Bigger week grid; the selected day gets a wide column so titles stay readable. */
+.week-grid-wrap { height: 560px; }
+.time-axis { font-size: 10px; }
+.week-columns { transition: grid-template-columns .2s ease; }
+@media (max-width: 480px) { .week-columns { min-width: 0; } }
+.calendar-block.plan { min-height: 24px; }
+.calendar-block.plan em { font-size: 12px; line-height: 1.25; padding: 3px 5px; overflow-wrap: anywhere; word-break: normal; }
+.week-column:not(.selected) .calendar-block.plan em { display: none; }
+
+/* Logo hearts: stronger colours. */
+.brand-hearts span { background: #d9606f; opacity: 1; }
+.brand-hearts span:last-child { background: #5f9a70; }

@@ -4,6 +4,7 @@ import type { CommonProps } from './appTypes'
 import type { SharedPlan } from './types'
 import { AppHeader, Avatar, Page } from './UI'
 import { SwipeRow } from './gestures'
+import { planTint } from './lib/planColor'
 import { cancelPlan } from './screens-plan'
 
 export function Plans({ state, open, onSelect, updateState, sync, notify }: CommonProps & { onSelect: (plan: SharedPlan) => void }) {
@@ -28,7 +29,7 @@ export function Plans({ state, open, onSelect, updateState, sync, notify }: Comm
     </div>
     {visible.length ? <div className="plan-list">{visible.map(plan => <SwipeRow key={plan.id} actionLabel="Huỷ" disabled={plan.status === 'cancelled' || history(plan)}
       onAction={() => { cancelPlan(state, updateState, sync, plan); notify('Đã huỷ kế hoạch cho cả hai.') }}><button className="plan-card" onClick={() => onSelect(plan)}>
-      <div className={`plan-date ${plan.type}`}><small>{new Intl.DateTimeFormat('vi-VN', { month: 'short' }).format(new Date(`${plan.date}T12:00`))}</small><strong>{new Date(`${plan.date}T12:00`).getDate()}</strong></div>
+      <div className={`plan-date tinted ${plan.type}`} style={planTint(plan.id)}><small>{new Intl.DateTimeFormat('vi-VN', { month: 'short' }).format(new Date(`${plan.date}T12:00`))}</small><strong>{new Date(`${plan.date}T12:00`).getDate()}</strong></div>
       <div className="plan-main"><div className="plan-title-row"><strong>{plan.title}</strong>
         <span className={`status-chip ${plan.type}`}>{plan.status === 'cancelled' ? 'Đã huỷ' : plan.type === 'soft' ? 'Kế hoạch mềm' : plan.status === 'proposed' ? 'Chờ xác nhận' : 'Đã xác nhận'}</span>
       </div><span><Clock size={14}/> {plan.start} – {plan.end}</span>
