@@ -3,6 +3,7 @@ import { ArrowRight, BriefcaseBusiness, CalendarDays, ChevronLeft, ChevronRight,
 import type { CommonProps } from './appTypes'
 import type { AvailabilityBlock, AvailabilityStatus, CoupleState, DailyState, SharedPlan, WorkSchedule, WorkType } from './types'
 import { SwipeRow } from './gestures'
+import { planTint } from './lib/planColor'
 import { removeAvailability, removeWork } from './screens-schedule'
 import { AppHeader, Avatar, Page } from './UI'
 import { overlapSuggestion, workOccursOn, workOnDate } from './lib/insights'
@@ -114,7 +115,7 @@ function DayAgenda({state,date,updateState,sync,notify,onSelectPlan}:Pick<Common
     else if(item.block){removeAvailability(state,updateState,sync,item.block);notify('Đã xóa khung giờ.')}
   }
   const body=(item:AgendaItem)=><>
-    <span className={`agenda-bar ${item.tone}`} aria-hidden="true"/>
+    <span className={`agenda-bar ${item.tone}${item.plan?' tinted':''}`} style={item.plan?planTint(item.plan.id):undefined} aria-hidden="true"/>
     <span className="agenda-time"><b>{item.start}</b><small>{item.end}</small></span>
     <span className="agenda-main"><strong>{item.title}</strong>{item.detail&&<small>{item.detail}</small>}</span>
     <span className={`agenda-owner ${item.owner}`}>{who(item)}</span>
@@ -132,7 +133,7 @@ function DayAgenda({state,date,updateState,sync,notify,onSelectPlan}:Pick<Common
   </section>
 }
 
-function WeekGrid({state,days,selected,onSelectDay}:{state:CoupleState;days:string[];selected:string;onSelectDay:(day:string)=>void}){const hours=[8,10,12,14,16,18,20,22];const style=(start:string,end:string)=>{const[sh,sm]=start.split(':').map(Number),[eh,em]=end.split(':').map(Number),startM=sh*60+sm,endM=eh*60+em,top=((startM-480)/840)*100,height=Math.max(3,((endM-startM)/840)*100);return{top:`${Math.max(0,top)}%`,height:`${Math.min(100-Math.max(0,top),height)}%`}};return <div className="week-grid-wrap"><div className="time-axis">{hours.map(h=><span key={h} style={{top:`${((h-8)/14)*100}%`}}>{String(h).padStart(2,'0')}:00</span>)}</div><div className="week-columns">{days.map(day=><button type="button" className={`week-column${day===selected?' selected':''}`} key={day} aria-label={`Xem lịch ${formatDate(day,{weekday:'long',day:'numeric',month:'numeric'})}`} onClick={()=>onSelectDay(day)}>{hours.map(h=><i key={h} style={{top:`${((h-8)/14)*100}%`}}/>)}{state.availability.filter(x=>x.date===day).map(b=><span key={b.id} className={`calendar-block ${b.userId===state.me.id?'me':'partner'} ${b.status}`} style={style(b.start,b.end)}/>)}{state.workSchedules.filter(w=>w.type!=='off'&&workOccursOn(w,day)).map(w=><span key={`work-${w.id}`} className={`calendar-block work ${w.userId===state.me.id?'me':'partner'}`} style={style(w.start,w.end)}/>)}{state.plans.filter(p=>p.date===day&&p.status!=='cancelled').map(p=><span key={`plan-${p.id}`} className={`calendar-block plan ${p.type} ${p.status}`} style={style(p.start,p.end)}><em>{p.title}</em></span>)}</button>)}</div></div>}
+function WeekGrid({state,days,selected,onSelectDay}:{state:CoupleState;days:string[];selected:string;onSelectDay:(day:string)=>void}){const hours=[8,10,12,14,16,18,20,22];const style=(start:string,end:string)=>{const[sh,sm]=start.split(':').map(Number),[eh,em]=end.split(':').map(Number),startM=sh*60+sm,endM=eh*60+em,top=((startM-480)/840)*100,height=Math.max(3,((endM-startM)/840)*100);return{top:`${Math.max(0,top)}%`,height:`${Math.min(100-Math.max(0,top),height)}%`}};return <div className="week-grid-wrap"><div className="time-axis">{hours.map(h=><span key={h} style={{top:`${((h-8)/14)*100}%`}}>{String(h).padStart(2,'0')}:00</span>)}</div><div className="week-columns" style={{gridTemplateColumns:days.map(d=>d===selected?'2.6fr':'1fr').join(' ')}}>{days.map(day=><button type="button" className={`week-column${day===selected?' selected':''}`} key={day} aria-label={`Xem lịch ${formatDate(day,{weekday:'long',day:'numeric',month:'numeric'})}`} onClick={()=>onSelectDay(day)}>{hours.map(h=><i key={h} style={{top:`${((h-8)/14)*100}%`}}/>)}{state.availability.filter(x=>x.date===day).map(b=><span key={b.id} className={`calendar-block ${b.userId===state.me.id?'me':'partner'} ${b.status}`} style={style(b.start,b.end)}/>)}{state.workSchedules.filter(w=>w.type!=='off'&&workOccursOn(w,day)).map(w=><span key={`work-${w.id}`} className={`calendar-block work ${w.userId===state.me.id?'me':'partner'}`} style={style(w.start,w.end)}/>)}{state.plans.filter(p=>p.date===day&&p.status!=='cancelled').map(p=><span key={`plan-${p.id}`} className={`calendar-block plan tinted ${p.type} ${p.status}`} style={{...style(p.start,p.end),...planTint(p.id)}}><em>{p.title}</em></span>)}</button>)}</div></div>}
 
 export function Us({state,updateState,open,notify}:CommonProps){
   const [inviteNow,setInviteNow]=useState(Date.now)
