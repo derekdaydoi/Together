@@ -19,7 +19,7 @@ for (const name of ['dates', 'insights', 'planIdeas']) {
   await writeFile(join(scratch, `${name}.mjs`), outputText.replaceAll("from './dates'", "from './dates.mjs'"))
 }
 
-const { localISODate, weekStartISO, addDaysISO, validTimeRange } = await import(pathToFileURL(join(scratch, 'dates.mjs')).href)
+const { localISODate, weekStartISO, addDaysISO, validTimeRange, weekdayIndex, repeatDates, firstWeekdayOnOrAfter } = await import(pathToFileURL(join(scratch, 'dates.mjs')).href)
 const { overlapSuggestion, workOccursOn } = await import(pathToFileURL(join(scratch, 'insights.mjs')).href)
 const { planIdeas } = await import(pathToFileURL(join(scratch, 'planIdeas.mjs')).href)
 
@@ -184,6 +184,33 @@ test('fresh mutation applies its complete version without mutating prior state',
 test('equal revisions retain the existing snapshot rather than mixing response fields', () => {
   const current = [responsePlan(3, 'cancelled', { title: 'Authoritative snapshot' })]
   assert.strictEqual(reconcilePlanResponse(current, responsePlan(3, 'confirmed')), current)
+})
+
+test('weekday index is Monday-first', () => {
+  assert.equal(weekdayIndex('2026-10-05'), 0) // Monday
+  assert.equal(weekdayIndex('2026-10-11'), 6) // Sunday
+})
+
+test('repeatDates: every day for 28 days, only chosen weekdays, and the horizon is exclusive', () => {
+  assert.equal(repeatDates('2026-10-05', [0, 1, 2, 3, 4, 5, 6]).length, 28)
+  const monWed = repeatDates('2026-10-05', [0, 2])
+  assert.deepEqual(monWed.slice(0, 3), ['2026-10-05', '2026-10-07', '2026-10-12'])
+  assert.equal(monWed.length, 8)
+  assert.ok(monWed.every(date => [0, 2].includes(weekdayIndex(date))))
+  assert.ok(!monWed.includes('2026-11-02')) // day 28 is outside the horizon
+})
+
+test('repeatDates starts on the first matching day, not on the start date itself', () => {
+  assert.deepEqual(repeatDates('2026-10-06', [0]).slice(0, 2), ['2026-10-12', '2026-10-19'])
+  assert.deepEqual(repeatDates('2026-10-06', []), [])
+})
+
+test('firstWeekdayOnOrAfter keeps the start date when it already matches and wraps across weeks', () => {
+  assert.equal(firstWeekdayOnOrAfter('2026-10-05', 0), '2026-10-05')
+  assert.equal(firstWeekdayOnOrAfter('2026-10-05', 6), '2026-10-11')
+  assert.equal(firstWeekdayOnOrAfter('2026-10-07', 0), '2026-10-12')
+  assert.equal(firstWeekdayOnOrAfter('2026-12-30', 3), '2026-12-31') // Wednesday -> Thursday
+  assert.equal(firstWeekdayOnOrAfter('2026-12-30', 4), '2027-01-01') // crosses the year
 })
 
 after(async () => { await rm(scratch, { force: true, recursive: true }) })

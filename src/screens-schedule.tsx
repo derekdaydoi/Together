@@ -4,7 +4,8 @@ import type { CommonProps } from './appTypes'
 import type { AvailabilityStatus, AvailabilityBlock, WorkSchedule, WorkType } from './types'
 import { Field, Page, TopBack } from './UI'
 import { addAvailability, addWork } from './lib/demoStore'
-import { localISODate, validTimeRange } from './lib/dates'
+import { REPEAT_HORIZON_DAYS, firstWeekdayOnOrAfter, localISODate, repeatDates, validTimeRange, weekdayIndex } from './lib/dates'
+import { FrequencyButton, describeWeekdays } from './frequency'
 import { workOccursOn } from './lib/insights'
 import { deleteRemoteAvailability, deleteRemoteWork, newId, saveRemoteAvailability, saveRemoteWork } from './lib/remoteStore'
 import { isSupabaseConfigured } from './lib/supabase'
@@ -32,20 +33,25 @@ export function WorkForm({ state, updateState, notify, onClose, sync }: CommonPr
   const [start, setStart] = useState('09:00')
   const [end, setEnd] = useState('17:30')
   const [note, setNote] = useState('')
-  const [repeat, setRepeat] = useState(false)
   const [busy, setBusy] = useState(false)
   const mySchedules = state.workSchedules.filter(x => x.userId === state.me.id && workOccursOn(x, date))
 
-  const save = async () => {
+  const save = async (days?: number[]) => {
     if (busy) return
     if (!validTimeRange(start, end)) return notify('Giờ kết thúc phải sau giờ bắt đầu trong cùng ngày.', 'normal')
     if (note.length > 500) return notify('Ghi chú quá dài.', 'normal')
-    const item: WorkSchedule = { id: uid('work'), userId: state.me.id, date, start, end, type, note, repeatsWeekly: repeat }
+    // Each chosen weekday becomes one weekly-repeating series starting at its first occurrence.
+    const chosen = days ?? []
+    const items: WorkSchedule[] = chosen.length
+      ? chosen.map(weekday => ({ id: uid('work'), userId: state.me.id, date: firstWeekdayOnOrAfter(date, weekday), start, end, type, note, repeatsWeekly: true }))
+      : [{ id: uid('work'), userId: state.me.id, date, start, end, type, note, repeatsWeekly: false }]
     setBusy(true)
     const coupleId = state.id
-    updateState(draft => addWork(draft, item))
-    sync(() => saveRemoteWork(coupleId, item), 'Không thể lưu lịch làm việc.')
-    notify('Đã lưu lịch làm việc.')
+    for (const item of items) {
+      updateState(draft => addWork(draft, item))
+      sync(() => saveRemoteWork(coupleId, item), 'Không thể lưu lịch làm việc.')
+    }
+    notify(chosen.length ? `Đã lưu lịch làm việc lặp ${describeWeekdays(chosen)}.` : 'Đã lưu lịch làm việc.')
     onClose()
   }
   const remove = (item: WorkSchedule, ask = true) => {
@@ -74,11 +80,10 @@ export function WorkForm({ state, updateState, notify, onClose, sync }: CommonPr
         <Field label="Đến"><input type="time" value={end} onChange={e => setEnd(e.target.value)}/></Field>
       </div>
       <Field label="Ghi chú (tuỳ chọn)"><input value={note} maxLength={500} onChange={e => setNote(e.target.value)} placeholder="Họp team, làm việc ở nhà…"/></Field>
-      <label className="toggle-row"><button type="button" className={`toggle ${repeat ? 'on' : ''}`} onClick={() => setRepeat(!repeat)}><span/></button>
-        <div><strong>Lặp hàng tuần</strong><small>Có thể xóa cả chuỗi lịch khi thay đổi</small></div>
-      </label>
+      <FrequencyButton initialDay={weekdayIndex(date)} onPick={days => void save(days)}
+        hint="Lịch làm việc lặp mỗi tuần cho đến khi bạn xoá chuỗi (vuốt trái hoặc bấm xoá)."/>
     </div>
-    <button className="primary-button sticky-action" disabled={busy} onClick={save}>{busy ? 'Đang xử lý…' : 'Thêm lịch làm việc'}</button>
+    <button className="primary-button sticky-action" disabled={busy} onClick={() => void save()}>{busy ? 'Đang xử lý…' : 'Thêm lịch làm việc'}</button>
   </Page>
 }
 
@@ -91,16 +96,20 @@ export function AvailabilityForm({ state, updateState, notify, onClose, sync }: 
   const [busy, setBusy] = useState(false)
   const mine = state.availability.filter(x => x.userId === state.me.id && x.date === date)
 
-  const save = async () => {
+  const save = async (days?: number[]) => {
     if (busy) return
     if (!validTimeRange(start, end)) return notify('Giờ kết thúc phải sau giờ bắt đầu trong cùng ngày.', 'normal')
     if (note.length > 500) return notify('Ghi chú quá dài.', 'normal')
-    const item: AvailabilityBlock = { id: uid('availability'), userId: state.me.id, date, start, end, status, note }
+    const chosen = days ?? []
+    const dates = chosen.length ? repeatDates(date, chosen) : [date]
+    const items: AvailabilityBlock[] = dates.map(day => ({ id: uid('availability'), userId: state.me.id, date: day, start, end, status, note }))
     setBusy(true)
     const coupleId = state.id
-    updateState(draft => addAvailability(draft, item))
-    sync(() => saveRemoteAvailability(coupleId, item), 'Không thể lưu lịch.')
-    notify('Đã lưu lịch và nhu cầu của bạn.')
+    for (const item of items) {
+      updateState(draft => addAvailability(draft, item))
+      sync(() => saveRemoteAvailability(coupleId, item), 'Không thể lưu lịch.')
+    }
+    notify(chosen.length ? `Đã lưu ${items.length} khung giờ lặp ${describeWeekdays(chosen)}.` : 'Đã lưu lịch và nhu cầu của bạn.')
     onClose()
   }
   const remove = (item: AvailabilityBlock, ask = true) => {
@@ -127,8 +136,10 @@ export function AvailabilityForm({ state, updateState, notify, onClose, sync }: 
         <Field label="Đến"><input type="time" value={end} onChange={e => setEnd(e.target.value)}/></Field>
       </div>
       <Field label="Ghi chú (tuỳ chọn)"><textarea rows={3} value={note} maxLength={500} onChange={e => setNote(e.target.value)} placeholder="Có thể đi ăn, cần yên tĩnh…"/></Field>
+      <FrequencyButton initialDay={weekdayIndex(date)} onPick={days => void save(days)}
+        hint={`Tạo khung giờ cho ${REPEAT_HORIZON_DAYS / 7} tuần tới kể từ ngày đã chọn.`}/>
     </div>
-    <button className="primary-button sticky-action" disabled={busy} onClick={save}>{busy ? 'Đang xử lý…' : 'Thêm khung giờ'}</button>
+    <button className="primary-button sticky-action" disabled={busy} onClick={() => void save()}>{busy ? 'Đang xử lý…' : 'Thêm khung giờ'}</button>
   </Page>
 }
 

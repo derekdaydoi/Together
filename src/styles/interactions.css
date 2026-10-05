@@ -106,7 +106,8 @@ button.agenda-row { cursor: pointer; }
 .sheet-backdrop { position: fixed; inset: 0; z-index: 200; display: flex; align-items: flex-end; justify-content: center; background: rgba(40, 28, 28, .42); }
 .sheet { width: 100%; max-width: 480px; max-height: 90dvh; overflow-y: auto; padding: 16px 18px calc(18px + env(safe-area-inset-bottom, 0px)); border-radius: 26px 26px 0 0; background: #fffdfb; box-shadow: 0 -10px 40px rgba(60, 40, 40, .18); }
 .sheet-head { display: flex; align-items: center; gap: 12px; padding-bottom: 12px; margin-bottom: 10px; border-bottom: 1px solid #f0e7e1; }
-.sheet-head > div { flex: 1; min-width: 0; display: grid; }
+.sheet-head > div:not(.avatar) { flex: 1; min-width: 0; display: grid; }
+.sheet-head .avatar { flex: none; width: 58px; height: 58px; aspect-ratio: 1 / 1; border-radius: 50%; }
 .sheet-head strong { font-size: 16px; overflow-wrap: anywhere; }
 .sheet-head small { font-size: 12.5px; color: #6a615c; }
 .sheet-list { display: grid; gap: 10px; }
@@ -125,3 +126,19 @@ button.agenda-row { cursor: pointer; }
 .sheet-error { color: #a33f49 !important; }
 .danger-button { padding: 0 18px; border: 0; border-radius: 14px; background: #c0454f; color: #fff; font: inherit; font-weight: 700; cursor: pointer; }
 .danger-button:disabled { opacity: .45; cursor: not-allowed; }
+/* Frequency ("Tan suat") row and popup. */
+.frequency-row { width: 100%; min-height: 60px; display: flex; align-items: center; gap: 12px; padding: 10px 14px; border: 1px solid #e7ddd5; border-radius: 18px; background: #fff; font: inherit; text-align: left; cursor: pointer; color: #3a302d; }
+.frequency-row > div { flex: 1; min-width: 0; display: grid; gap: 2px; }
+.frequency-row strong { font-size: 14.5px; }
+.frequency-row small { font-size: 12.5px; color: #6a615c; }
+.sheet-backdrop.center { align-items: center; padding: 16px; }
+.sheet.freq-dialog { max-width: 380px; border-radius: 24px; padding: 20px 18px 18px; display: grid; gap: 4px; }
+.freq-dialog > strong { font-size: 17px; }
+.freq-sub, .freq-summary, .freq-hint { margin: 0; font-size: 13px; line-height: 1.45; color: #6a615c; }
+.freq-summary { margin-top: 6px; font-weight: 700; color: #3a302d; }
+.freq-days { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 6px; margin: 12px 0 6px; }
+.freq-days button { min-height: 46px; padding: 0; border: 1px solid #e7ddd5; border-radius: 14px; background: #fff; font: inherit; font-size: 13px; font-weight: 700; color: #5d4a4a; cursor: pointer; }
+.freq-days button.on { background: #d9606f; border-color: #d9606f; color: #fff; }
+.freq-all { margin: 2px 0 0; justify-self: start; }
+.freq-dialog .sheet-actions { margin-top: 12px; }
+.freq-dialog .sheet-actions > button { flex: 1; }

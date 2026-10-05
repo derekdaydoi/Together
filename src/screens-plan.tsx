@@ -3,7 +3,8 @@ import { CalendarDays, Check, Clock3, Heart, MapPin } from 'lucide-react'
 import type { CommonProps } from './appTypes'
 import type { PlanType, SharedPlan } from './types'
 import { Avatar, Field, Page, TopBack } from './UI'
-import { localISODate, validTimeRange } from './lib/dates'
+import { REPEAT_HORIZON_DAYS, localISODate, repeatDates, validTimeRange, weekdayIndex } from './lib/dates'
+import { FrequencyButton, describeWeekdays } from './frequency'
 import { planIdeas } from './lib/planIdeas'
 import { cancelRemotePlan, confirmRemotePlan, newId, saveRemotePlan, updateRemotePlan } from './lib/remoteStore'
 import { isSupabaseConfigured } from './lib/supabase'
@@ -41,13 +42,31 @@ export function PlanForm({ state, updateState, notify, sync, onClose, initialPla
   const editUnavailable = Boolean(initialPlan && (!latestEdit || latestEdit.status === 'cancelled'))
   const suggested = planIdeas(state, date)
 
-  const save = async () => {
+  const save = async (days?: number[]) => {
     if (busy) return
     if (editUnavailable) return notify('Kế hoạch đã bị huỷ hoặc không còn tồn tại. Hãy quay lại danh sách.', 'normal')
     if (!title.trim()) return notify('Hãy đặt tên cho kế hoạch.', 'normal')
     if (!validTimeRange(start, end)) return notify('Giờ kết thúc phải sau giờ bắt đầu trong cùng một ngày.', 'normal')
     if (title.trim().length > 160 || location.length > 300 || note.length > 800) {
       return notify('Tên, địa điểm hoặc ghi chú quá dài.', 'normal')
+    }
+    const chosen = initialPlan ? [] : (days ?? [])
+    if (chosen.length) {
+      // One concrete plan per matching day; each is confirmed on its own when it needs both people.
+      const series: SharedPlan[] = repeatDates(date, chosen).map(day => ({
+        id: uid(), title: title.trim(), date: day, start, end, type, status: 'proposed', revision: 1,
+        location: location.trim(), note: note.trim(), createdBy: state.me.id,
+      }))
+      setBusy(true)
+      const coupleId = state.id
+      updateState(draft => {
+        if (draft.id !== state.id || draft.me.id !== state.me.id) return
+        for (const item of series) draft.plans = reconcilePlanResponse(draft.plans, item, true)
+      })
+      for (const item of series) sync(() => saveRemotePlan(coupleId, item), 'Không thể lưu kế hoạch.')
+      notify(`Đã tạo ${series.length} kế hoạch lặp ${describeWeekdays(chosen)}.`)
+      onClose()
+      return
     }
     const next: SharedPlan = {
       id: initialPlan?.id ?? uid(), title: title.trim(), date, start, end, type,
@@ -94,13 +113,15 @@ export function PlanForm({ state, updateState, notify, sync, onClose, initialPla
       </div>
       <Field label="Địa điểm (tuỳ chọn)"><input value={location} maxLength={300} onChange={e => setLocation(e.target.value)} placeholder="Gần nhà, quán quen, ở nhà…"/></Field>
       <Field label="Ghi chú (tuỳ chọn)"><textarea rows={3} value={note} maxLength={800} onChange={e => setNote(e.target.value)} placeholder="Hai người muốn ăn gì, cần chuẩn bị gì…"/></Field>
+      {!initialPlan && <FrequencyButton initialDay={weekdayIndex(date)} onPick={days => void save(days)}
+        hint={`Tạo kế hoạch cho ${REPEAT_HORIZON_DAYS / 7} tuần tới. Kế hoạch cần cả hai xác nhận sẽ gửi từng buổi để người ấy chốt.`}/>}
     </div>
     <div className="members-preview"><span className="eyebrow">Thành viên</span><div>
       <Avatar profile={state.me} size="sm"/><Avatar profile={state.partner} size="sm"/>
       <strong>{state.me.displayName} + {state.partner.displayName}</strong>
     </div></div>
     {editUnavailable && <p className="privacy-note" role="status">Kế hoạch đã bị huỷ hoặc không còn tồn tại. Hãy quay lại danh sách để xem trạng thái mới.</p>}
-    <button className="primary-button sticky-action" disabled={busy || editUnavailable} onClick={save}>
+    <button className="primary-button sticky-action" disabled={busy || editUnavailable} onClick={() => void save()}>
       {busy ? 'Đang lưu…' : initialPlan ? 'Lưu thay đổi' : 'Tạo kế hoạch'}
     </button>
   </Page>

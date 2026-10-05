@@ -32,3 +32,25 @@ export function validTimeRange(start: string, end: string): boolean {
 export function localTimestamp(date: string, time: string): string {
   return new Date(`${date}T${time}:00`).toISOString()
 }
+
+// Weekday index with Monday = 0 ... Sunday = 6, the same order as the week grid.
+export const weekdayIndex = (date: string) => (dateAtNoon(date).getDay() + 6) % 7
+
+// Repeated plans/availability are created as concrete entries for this many days.
+export const REPEAT_HORIZON_DAYS = 28
+
+// Dates in [start, start + horizonDays) that fall on one of the chosen weekdays.
+export function repeatDates(start: string, weekdays: number[], horizonDays = REPEAT_HORIZON_DAYS): string[] {
+  const wanted = new Set(weekdays)
+  const dates: string[] = []
+  for (let i = 0; i < horizonDays; i++) {
+    const date = addDaysISO(start, i)
+    if (wanted.has(weekdayIndex(date))) dates.push(date)
+  }
+  return dates
+}
+
+// First date on or after `start` that falls on `weekday`.
+export function firstWeekdayOnOrAfter(start: string, weekday: number): string {
+  return addDaysISO(start, (weekday - weekdayIndex(start) + 7) % 7)
+}
