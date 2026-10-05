@@ -87,28 +87,41 @@ button.agenda-row { cursor: pointer; }
 .calendar-block.plan.tinted em { color: var(--pc-ink); }
 .agenda-bar.plan.tinted { background: var(--pc-bar); }
 
-/* Bigger week grid; the selected day gets a wide column so titles stay readable. */
-.week-grid-wrap { height: 560px; }
-.time-axis { font-size: 10px; }
-.week-columns { transition: grid-template-columns .2s ease; }
-@media (max-width: 480px) { .week-columns { min-width: 0; } }
-.calendar-block.plan { min-height: 24px; }
-.calendar-block.plan em { font-size: 12px; line-height: 1.25; padding: 3px 5px; overflow-wrap: anywhere; word-break: normal; }
-.week-column:not(.selected) .calendar-block.plan em { font-size: 9px; padding: 2px 1px; text-align: center; }
-
 /* Logo hearts: stronger colours. */
 .brand-hearts span { background: #d9606f; opacity: 1; }
 .brand-hearts span:last-child { background: #5f9a70; }
 
-/* Plan blocks on the grid show only the owner's short name; details open on tap. */
-.calendar-block.plan em { font-weight: 800; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.calendar-block.plan { cursor: pointer; }
+/* Compact week grid: equal columns, short height, labels never clipped. */
+.week-grid-wrap { height: 330px; margin: 12px 0; overflow: visible; grid-template-columns: 40px minmax(0, 1fr); }
+.time-axis { font-size: 10px; }
+.time-axis span { right: 6px; white-space: nowrap; }
+.week-columns { grid-template-columns: repeat(7, minmax(0, 1fr)); min-width: 0; }
+.week-column { min-width: 0; }
+.calendar-block.plan { min-height: 22px; cursor: pointer; }
+/* Plan blocks show only the owner's short name; details open on tap. */
+.calendar-block.plan em { padding: 2px 1px; font-size: 9px; font-weight: 800; line-height: 1.2; text-align: center; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 
-/* Delete shared data. */
-.danger-zone { margin: 18px 0 8px; padding: 14px; border-radius: 20px; border: 1px solid #ecc9c9; background: #fff8f7; }
-.danger-zone p { margin: 8px 0; font-size: 13.5px; line-height: 1.45; color: #5d4a4a; }
-.danger-zone label { display: block; margin-top: 8px; font-size: 13px; font-weight: 700; color: #5d4a4a; }
-.danger-zone input { margin-top: 6px; padding: 0 12px; border: 1px solid #e3bcbc; border-radius: 12px; background: #fff; font-family: inherit; }
-.danger-zone .text-button.danger { margin: 8px 0 0; }
+/* Account menu (header avatar). */
+.avatar-button { padding: 0; border: 0; border-radius: 50%; background: none; cursor: pointer; display: grid; place-items: center; min-width: 44px; min-height: 44px; }
+.sheet-backdrop { position: fixed; inset: 0; z-index: 200; display: flex; align-items: flex-end; justify-content: center; background: rgba(40, 28, 28, .42); }
+.sheet { width: 100%; max-width: 480px; max-height: 90dvh; overflow-y: auto; padding: 16px 18px calc(18px + env(safe-area-inset-bottom, 0px)); border-radius: 26px 26px 0 0; background: #fffdfb; box-shadow: 0 -10px 40px rgba(60, 40, 40, .18); }
+.sheet-head { display: flex; align-items: center; gap: 12px; padding-bottom: 12px; margin-bottom: 10px; border-bottom: 1px solid #f0e7e1; }
+.sheet-head > div { flex: 1; min-width: 0; display: grid; }
+.sheet-head strong { font-size: 16px; overflow-wrap: anywhere; }
+.sheet-head small { font-size: 12.5px; color: #6a615c; }
+.sheet-list { display: grid; gap: 10px; }
+.sheet-row { width: 100%; min-height: 60px; display: flex; align-items: center; gap: 12px; padding: 10px 14px; border: 1px solid #eee4dd; border-radius: 18px; background: #fff; font: inherit; text-align: left; cursor: pointer; color: #3a302d; }
+.sheet-row > div { flex: 1; min-width: 0; display: grid; gap: 2px; }
+.sheet-row strong { font-size: 14.5px; }
+.sheet-row small { font-size: 12.5px; color: #6a615c; overflow-wrap: anywhere; }
+.sheet-row.danger { color: #a33f49; border-color: #ecc9c9; background: #fff8f7; }
+.sheet-confirm { display: grid; gap: 8px; }
+.sheet-confirm > strong { font-size: 16px; }
+.sheet-confirm p, .sheet-note { margin: 0; font-size: 13.5px; line-height: 1.5; color: #5d4a4a; }
+.sheet-confirm label { margin-top: 4px; font-size: 13px; font-weight: 700; color: #5d4a4a; }
+.sheet-confirm input { min-height: 44px; width: 100%; min-width: 0; padding: 0 12px; border: 1px solid #e3bcbc; border-radius: 12px; background: #fff; font: inherit; font-size: 16px; }
+.sheet-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 4px; }
+.sheet-actions button { min-height: 44px; }
+.sheet-error { color: #a33f49 !important; }
 .danger-button { padding: 0 18px; border: 0; border-radius: 14px; background: #c0454f; color: #fff; font: inherit; font-weight: 700; cursor: pointer; }
 .danger-button:disabled { opacity: .45; cursor: not-allowed; }

@@ -10,7 +10,7 @@ import { overlapSuggestion, workOccursOn, workOnDate } from './lib/insights'
 import { addDaysISO, localISODate, weekStartISO } from './lib/dates'
 import { blobToDataUrl, compressAvatar } from './lib/image'
 import { isSupabaseConfigured, supabase } from './lib/supabase'
-import { deleteRemoteCoupleData, rotateRemoteInvite, saveRemoteProfile } from './lib/remoteStore'
+import { rotateRemoteInvite, saveRemoteProfile } from './lib/remoteStore'
 import { resetDemoState } from './lib/demoStore'
 import { AccountRecoveryCard } from './screens-account'
 
@@ -133,7 +133,7 @@ function DayAgenda({state,date,updateState,sync,notify,onSelectPlan}:Pick<Common
   </section>
 }
 
-function WeekGrid({state,days,selected,onSelectDay,onSelectPlan}:{state:CoupleState;days:string[];selected:string;onSelectDay:(day:string)=>void;onSelectPlan?:(plan:SharedPlan)=>void}){const hours=[8,10,12,14,16,18,20,22];const style=(start:string,end:string)=>{const[sh,sm]=start.split(':').map(Number),[eh,em]=end.split(':').map(Number),startM=sh*60+sm,endM=eh*60+em,top=((startM-480)/840)*100,height=Math.max(3,((endM-startM)/840)*100);return{top:`${Math.max(0,top)}%`,height:`${Math.min(100-Math.max(0,top),height)}%`}};return <div className="week-grid-wrap"><div className="time-axis">{hours.map(h=><span key={h} style={{top:`${((h-8)/14)*100}%`}}>{String(h).padStart(2,'0')}:00</span>)}</div><div className="week-columns" style={{gridTemplateColumns:days.map(d=>d===selected?'2.6fr':'1fr').join(' ')}}>{days.map(day=><button type="button" className={`week-column${day===selected?' selected':''}`} key={day} aria-label={`Xem lịch ${formatDate(day,{weekday:'long',day:'numeric',month:'numeric'})}`} onClick={()=>onSelectDay(day)}>{hours.map(h=><i key={h} style={{top:`${((h-8)/14)*100}%`}}/>)}{state.availability.filter(x=>x.date===day).map(b=><span key={b.id} className={`calendar-block ${b.userId===state.me.id?'me':'partner'} ${b.status}`} style={style(b.start,b.end)}/>)}{state.workSchedules.filter(w=>w.type!=='off'&&workOccursOn(w,day)).map(w=><span key={`work-${w.id}`} className={`calendar-block work ${w.userId===state.me.id?'me':'partner'}`} style={style(w.start,w.end)}/>)}{state.plans.filter(p=>p.date===day&&p.status!=='cancelled').map(p=><span key={`plan-${p.id}`} className={`calendar-block plan tinted ${p.type} ${p.status}`} style={{...style(p.start,p.end),...planTint(p.id)}} role="button" aria-label={p.title} onClick={e=>{e.stopPropagation();onSelectDay(day);onSelectPlan?.(p)}}><em>{p.createdBy===state.me.id?state.me.displayName:state.partner.displayName}</em></span>)}</button>)}</div></div>}
+function WeekGrid({state,days,selected,onSelectDay,onSelectPlan}:{state:CoupleState;days:string[];selected:string;onSelectDay:(day:string)=>void;onSelectPlan?:(plan:SharedPlan)=>void}){const hours=[8,10,12,14,16,18,20,22];const style=(start:string,end:string)=>{const[sh,sm]=start.split(':').map(Number),[eh,em]=end.split(':').map(Number),startM=sh*60+sm,endM=eh*60+em,top=((startM-480)/840)*100,height=Math.max(3,((endM-startM)/840)*100);return{top:`${Math.max(0,top)}%`,height:`${Math.min(100-Math.max(0,top),height)}%`}};return <div className="week-grid-wrap"><div className="time-axis">{hours.map(h=><span key={h} style={{top:`${((h-8)/14)*100}%`}}>{String(h).padStart(2,'0')}:00</span>)}</div><div className="week-columns">{days.map(day=><button type="button" className={`week-column${day===selected?' selected':''}`} key={day} aria-label={`Xem lịch ${formatDate(day,{weekday:'long',day:'numeric',month:'numeric'})}`} onClick={()=>onSelectDay(day)}>{hours.map(h=><i key={h} style={{top:`${((h-8)/14)*100}%`}}/>)}{state.availability.filter(x=>x.date===day).map(b=><span key={b.id} className={`calendar-block ${b.userId===state.me.id?'me':'partner'} ${b.status}`} style={style(b.start,b.end)}/>)}{state.workSchedules.filter(w=>w.type!=='off'&&workOccursOn(w,day)).map(w=><span key={`work-${w.id}`} className={`calendar-block work ${w.userId===state.me.id?'me':'partner'}`} style={style(w.start,w.end)}/>)}{state.plans.filter(p=>p.date===day&&p.status!=='cancelled').map(p=><span key={`plan-${p.id}`} className={`calendar-block plan tinted ${p.type} ${p.status}`} style={{...style(p.start,p.end),...planTint(p.id)}} role="button" aria-label={p.title} onClick={e=>{e.stopPropagation();onSelectDay(day);onSelectPlan?.(p)}}><em>{p.createdBy===state.me.id?state.me.displayName:state.partner.displayName}</em></span>)}</button>)}</div></div>}
 
 export function Us({state,updateState,open,notify}:CommonProps){
   const [inviteNow,setInviteNow]=useState(Date.now)
@@ -223,35 +223,5 @@ const [privacyExpanded,setPrivacyExpanded]=useState(false);const fileRef=useRef<
   {waiting&&!canRotate&&isSupabaseConfigured&&<p>Chỉ chủ sở hữu không gian có thể tạo lại lời mời.</p>}
   {!isSupabaseConfigured&&<p>Đây là bản demo trên thiết bị. Kết nối người thật cần đăng nhập.</p>}
   <p role="status" aria-live="polite">{inviteFeedback}</p>
-</section><DeleteCoupleData partnerName={state.partner.displayName} paired={state.partner.id!=='waiting-partner'}/>{!isSupabaseConfigured&&<button className="text-button danger" onClick={()=>{resetDemoState();localStorage.removeItem('together-onboarded');location.reload()}}><RefreshCcw size={15}/> Reset bản demo</button>}</Page>}
-function DeleteCoupleData({partnerName,paired}:{partnerName:string;paired:boolean}){
-  const[expanded,setExpanded]=useState(false),[text,setText]=useState(''),[busy,setBusy]=useState(false),[done,setDone]=useState(false),[error,setError]=useState('')
-  // Accept "XOA" or "XOÁ" so nobody has to type diacritics on a phone keyboard.
-  const confirmed=text.normalize('NFD').replace(/[̀-ͯ]/g,'').trim().toUpperCase()==='XOA'
-  const run=async()=>{
-    if(!confirmed||busy)return
-    setBusy(true);setError('')
-    try{
-      if(isSupabaseConfigured)await deleteRemoteCoupleData()
-      else{resetDemoState();localStorage.removeItem('together-onboarded')}
-      setDone(true)
-      window.setTimeout(()=>location.reload(),1400)
-    }catch{setError('Chưa xoá được. Hãy kiểm tra kết nối rồi thử lại.');setBusy(false)}
-  }
-  return <section className="danger-zone" aria-labelledby="danger-zone-title">
-    <span className="eyebrow" id="danger-zone-title">Vùng nguy hiểm</span>
-    {done?<p role="status">Đã xoá toàn bộ dữ liệu chung. Đang tải lại…</p>:!expanded
-      ?<button type="button" className="text-button danger" onClick={()=>setExpanded(true)}>Xoá toàn bộ dữ liệu chung</button>
-      :<>
-        <p>{paired?`Thao tác này xoá vĩnh viễn lịch làm việc, lịch rảnh, trạng thái, check-in và mọi kế hoạch của cả bạn và ${partnerName}. ${partnerName} cũng sẽ mất dữ liệu ngay lập tức.`:'Thao tác này xoá vĩnh viễn không gian chung và toàn bộ dữ liệu trong đó.'} Không thể hoàn tác. Hồ sơ cá nhân (tên, linh vật, ảnh) vẫn được giữ.</p>
-        <label htmlFor="delete-confirm">Gõ XOA để xác nhận</label>
-        <input id="delete-confirm" value={text} autoComplete="off" autoCapitalize="characters" onChange={e=>setText(e.target.value)} style={{minHeight:44,width:'100%',minWidth:0,fontSize:16}}/>
-        <div style={{display:'flex',flexWrap:'wrap',gap:8,marginTop:8}}>
-          <button type="button" className="secondary-button" style={{minHeight:44}} disabled={busy} onClick={()=>{setExpanded(false);setText('');setError('')}}>Giữ lại</button>
-          <button type="button" className="danger-button" style={{minHeight:44}} disabled={!confirmed||busy} onClick={()=>void run()}>{busy?'Đang xoá…':'Xoá vĩnh viễn'}</button>
-        </div>
-        {error&&<p role="alert">{error}</p>}
-      </>}
-  </section>
-}
+</section>{!isSupabaseConfigured&&<button className="text-button danger" onClick={()=>{resetDemoState();localStorage.removeItem('together-onboarded');location.reload()}}><RefreshCcw size={15}/> Reset bản demo</button>}</Page>}
 function Feeling({feeling,name,note}:{feeling:1|2|3;name:string;note?:string}){const map={1:['Quá ít','☹'],2:['Vừa đủ','☺'],3:['Quá nhiều','◔']} as const;return <div className={`feeling-badge feeling-${feeling}`}><span>{map[feeling][1]}</span><div><strong>{name}</strong><small>{map[feeling][0]}</small>{note&&<p className="feeling-note">“{note}”</p>}</div></div>}

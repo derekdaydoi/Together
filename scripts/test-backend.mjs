@@ -492,6 +492,48 @@ try {
       assert.equal((await countFor(V)).couples, 0)
     })
   }
+  if (!baseline && migrations.includes('20261005180000_delete_my_couple_data.sql')) {
+    const P1 = '00000000-0000-0000-0000-0000000000b1'
+    const P2 = '00000000-0000-0000-0000-0000000000b2'
+    const PC = '10000000-0000-0000-0000-0000000000b1'
+    const mine = async (table, user) => Number((await db.query(`select count(*) as n from public.${table} where couple_id='${PC}' and user_id='${user}'`)).rows[0].n)
+    await db.exec(`reset role;
+      insert into auth.users(id) values ('${P1}'),('${P2}');
+      insert into public.couples(id,created_by) values ('${PC}','${P1}');
+      insert into public.couple_members(couple_id,user_id) values ('${PC}','${P2}');
+      insert into public.daily_states(couple_id,user_id,state_date,energy_level,closeness_need) values ('${PC}','${P1}','2026-10-05',3,3),('${PC}','${P2}','2026-10-05',2,4);
+      insert into public.work_schedules(couple_id,user_id,starts_at,ends_at,work_type) values ('${PC}','${P1}','2026-10-05 02:00Z','2026-10-05 10:00Z','office'),('${PC}','${P2}','2026-10-05 02:00Z','2026-10-05 10:00Z','remote');
+      insert into public.availability_blocks(couple_id,user_id,starts_at,ends_at,status) values ('${PC}','${P1}','2026-10-05 12:00Z','2026-10-05 14:00Z','available'),('${PC}','${P2}','2026-10-05 12:00Z','2026-10-05 14:00Z','available');
+      insert into public.plans(couple_id,created_by,title,starts_at,ends_at) values ('${PC}','${P1}','Shared plan','2026-10-05 12:00Z','2026-10-05 13:00Z');
+      insert into public.weekly_checkins(couple_id,user_id,week_start,feeling) values ('${PC}','${P1}','2026-10-05',2),('${PC}','${P2}','2026-10-05',3);`)
+    await test('delete_my_couple_data: anon callers are rejected', async () => {
+      await db.exec('reset role; select set_config(\'request.jwt.claim.sub\', \'\', false); set role anon')
+      await denied('select public.delete_my_couple_data()', '42501')
+    })
+    await test('delete_my_couple_data: erases only the caller\'s own entries, even revealed check-ins', async () => {
+      await asUser(P1)
+      await db.exec('select public.delete_my_couple_data()')
+      await db.exec('reset role')
+      for (const t of ['daily_states', 'work_schedules', 'availability_blocks', 'weekly_checkins']) {
+        assert.equal(await mine(t, P1), 0, `${t} of caller`)
+        assert.equal(await mine(t, P2), 1, `${t} of partner`)
+      }
+    })
+    await test('delete_my_couple_data: shared plans, the couple and both memberships stay', async () => {
+      await db.exec('reset role')
+      assert.equal(Number((await db.query(`select count(*) as n from public.plans where couple_id='${PC}'`)).rows[0].n), 1)
+      assert.equal(Number((await db.query(`select count(*) as n from public.couple_members where couple_id='${PC}'`)).rows[0].n), 2)
+      assert.equal(Number((await db.query(`select count(*) as n from public.couples where id='${PC}'`)).rows[0].n), 1)
+    })
+    await test('delete_my_couple_data: repeating it, or calling it without a couple, is a no-op', async () => {
+      await asUser(P1)
+      await db.exec('select public.delete_my_couple_data()')
+      const lone = '00000000-0000-0000-0000-0000000000b3'
+      await db.exec(`reset role; insert into auth.users(id) values ('${lone}')`)
+      await asUser(lone)
+      await db.exec('select public.delete_my_couple_data()')
+    })
+  }
   console.log(`${passed} passed; ${failed} failed${baseline ? ' (baseline)' : ''}`)
   process.exitCode = failed ? 1 : 0
 } finally { await db.close() }

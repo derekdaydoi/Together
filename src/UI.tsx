@@ -1,3 +1,4 @@
+import { createContext, useContext } from 'react'
 import type { ReactNode } from 'react'
 import { ArrowLeft, Bell, CalendarDays, Heart, Home, UsersRound } from 'lucide-react'
 import type { CoupleState, Profile } from './types'
@@ -20,7 +21,9 @@ export function Avatar({ profile, size = 'md' }: { profile: Profile; size?: 'sm'
         : <Heart className="avatar-empty-heart" aria-hidden="true"/>}
   </div>
 }
-export function AppHeader({ state, subtitle }: { state: CoupleState; subtitle?: string }) { return <header className="app-header"><div><BrandMark compact/>{subtitle && <small>{subtitle}</small>}</div><div className="header-actions"><button className="icon-button" aria-label="Thông báo"><Bell size={20}/></button><Avatar profile={state.me} size="sm"/></div></header> }
+/** App provides this; tapping the header avatar opens the account menu. */
+export const AccountMenuContext = createContext<() => void>(() => {})
+export function AppHeader({ state, subtitle }: { state: CoupleState; subtitle?: string }) { const openAccountMenu = useContext(AccountMenuContext); return <header className="app-header"><div><BrandMark compact/>{subtitle && <small>{subtitle}</small>}</div><div className="header-actions"><button className="icon-button" aria-label="Thông báo"><Bell size={20}/></button><button type="button" className="avatar-button" aria-label="Tài khoản của bạn" aria-haspopup="dialog" onClick={openAccountMenu}><Avatar profile={state.me} size="sm"/></button></div></header> }
 export function TopBack({ title, onBack }: { title: string; onBack?: () => void }) { return <div className="top-back"><button className="icon-button" onClick={onBack} aria-label="Quay lại" disabled={!onBack}><ArrowLeft size={20}/></button><strong>{title}</strong><span className="top-spacer"/></div> }
 export function Field({ label, children }: { label: string; children: ReactNode }) { return <label className="field"><span className="field-label">{label}</span>{children}</label> }
 export function BottomNav({ active, onChange }: { active: View; onChange: (v: View) => void }) { const items: {key:View;label:string;icon:typeof Home}[]=[{key:'today',label:'Hôm nay',icon:Home},{key:'week',label:'Tuần',icon:CalendarDays},{key:'plans',label:'Kế hoạch',icon:Heart},{key:'us',label:'Chúng mình',icon:UsersRound}]; return <nav className="bottom-nav">{items.map(({key,label,icon:Icon})=><button key={key} className={active===key?'active':''} onClick={()=>onChange(key)}><Icon size={20}/><span>{label}</span></button>)}</nav> }
