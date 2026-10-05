@@ -200,6 +200,14 @@ export async function rotateRemoteInvite() {
   return { code: row.invite_code as string, expiresAt: row.invite_expires_at as string }
 }
 
+// Erases the whole couple's shared data for both people (server cascades from
+// the couple row). Profiles stay so either person can start over.
+export async function deleteRemoteCoupleData() {
+  const sb = client()
+  const { error } = await sb.rpc('delete_couple_data')
+  if (error) throw error
+}
+
 // A signed-in user without a couple still needs their own remote profile on
 // the setup screen. Never reuse another user's state or the demo seed.
 export async function loadRemoteProfileState(): Promise<CoupleState> {

@@ -159,6 +159,7 @@ export default function App(){
               setState(old=>isActive()&&mutationVersionRef.current===mutationVersion?profile:old)
               setSelectedPlan(null);setEditingPlan(null)
               if(initialLoad||lostCouple)setView('profile')
+              if(lostCouple)setToast({message:'Dữ liệu chung đã được xoá. Bạn có thể bắt đầu lại.',tone:'normal'})
             }
             if(initialLoad)localStorage.setItem('together-onboarded','1')
             initialLoad=false

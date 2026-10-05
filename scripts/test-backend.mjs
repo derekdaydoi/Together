@@ -426,6 +426,72 @@ try {
       assert.equal(result.rows[0].revision, 6)
     })
   }
+  if (!baseline && migrations.includes('20261005120000_delete_couple_data.sql')) {
+    const U1 = '00000000-0000-0000-0000-0000000000a1'
+    const U2 = '00000000-0000-0000-0000-0000000000a2'
+    const U3 = '00000000-0000-0000-0000-0000000000a3'
+    const U4 = '00000000-0000-0000-0000-0000000000a4'
+    const W = '10000000-0000-0000-0000-0000000000a1'
+    const V = '10000000-0000-0000-0000-0000000000a2'
+    const childTables = ['couple_members', 'daily_states', 'work_schedules', 'availability_blocks', 'plans', 'weekly_checkins']
+    const countFor = async (couple) => {
+      await db.exec('reset role')
+      const out = {}
+      for (const t of childTables) out[t] = Number((await db.query(`select count(*) as n from public.${t} where couple_id='${couple}'`)).rows[0].n)
+      out.couples = Number((await db.query(`select count(*) as n from public.couples where id='${couple}'`)).rows[0].n)
+      return out
+    }
+    await db.exec(`reset role;
+      insert into auth.users(id) values ('${U1}'),('${U2}'),('${U3}'),('${U4}');
+      insert into public.couples(id,created_by) values ('${W}','${U1}'),('${V}','${U3}');
+      insert into public.couple_members(couple_id,user_id) values ('${W}','${U2}'),('${V}','${U4}');
+      insert into public.daily_states(couple_id,user_id,state_date,energy_level,closeness_need) values ('${W}','${U1}','2026-10-05',3,3),('${W}','${U2}','2026-10-05',2,4);
+      insert into public.work_schedules(couple_id,user_id,starts_at,ends_at,work_type) values ('${W}','${U2}','2026-10-05 02:00Z','2026-10-05 10:00Z','office');
+      insert into public.availability_blocks(couple_id,user_id,starts_at,ends_at,status) values ('${W}','${U1}','2026-10-05 12:00Z','2026-10-05 14:00Z','available');
+      insert into public.plans(couple_id,created_by,title,starts_at,ends_at) values ('${W}','${U1}','Mine','2026-10-05 12:00Z','2026-10-05 13:00Z'),('${W}','${U2}','Partner plan','2026-10-05 14:00Z','2026-10-05 15:00Z'),('${V}','${U3}','Other couple','2026-10-05 12:00Z','2026-10-05 13:00Z');
+      insert into public.weekly_checkins(couple_id,user_id,week_start,feeling) values ('${W}','${U1}','2026-10-05',2);`)
+    await test('delete_couple_data: signed-out and anon callers are rejected', async () => {
+      await db.exec('reset role; select set_config(\'request.jwt.claim.sub\', \'\', false); set role anon')
+      await denied('select public.delete_couple_data()', '42501')
+    })
+    await test('delete_couple_data: a user without a couple is a harmless no-op', async () => {
+      const lone = '00000000-0000-0000-0000-0000000000a5'
+      await db.exec(`reset role; insert into auth.users(id) values ('${lone}')`)
+      await asUser(lone)
+      await db.exec('select public.delete_couple_data()')
+    })
+    await test('delete_couple_data: the non-owner partner can erase all of the couple\'s data', async () => {
+      const before = await countFor(W)
+      assert.ok(Object.values(before).every(n => n > 0), JSON.stringify(before))
+      await asUser(U2)
+      await db.exec('select public.delete_couple_data()')
+      const after = await countFor(W)
+      assert.ok(Object.values(after).every(n => n === 0), JSON.stringify(after))
+    })
+    await test('delete_couple_data: only the caller\'s couple is touched', async () => {
+      const other = await countFor(V)
+      assert.equal(other.couples, 1)
+      assert.equal(other.plans, 1)
+      assert.equal(other.couple_members, 2)
+    })
+    await test('delete_couple_data: both people keep their profiles and are free to join a new couple', async () => {
+      await db.exec('reset role')
+      const profiles = await db.query(`select count(*) as n from public.profiles where id in ('${U1}','${U2}')`)
+      assert.equal(Number(profiles.rows[0].n), 2)
+      const members = await db.query(`select count(*) as n from public.couple_members where user_id in ('${U1}','${U2}')`)
+      assert.equal(Number(members.rows[0].n), 0)
+      await asUser(U1)
+      const created = await db.query(`insert into public.couples(created_by) values ('${U1}') returning id`)
+      assert.ok(created.rows[0].id)
+    })
+    await test('delete_couple_data: calling it again after deletion is a no-op, and the owner can delete too', async () => {
+      await asUser(U2)
+      await db.exec('select public.delete_couple_data()')
+      await asUser(U3)
+      await db.exec('select public.delete_couple_data()')
+      assert.equal((await countFor(V)).couples, 0)
+    })
+  }
   console.log(`${passed} passed; ${failed} failed${baseline ? ' (baseline)' : ''}`)
   process.exitCode = failed ? 1 : 0
 } finally { await db.close() }

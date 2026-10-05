@@ -1,4 +1,4 @@
-﻿/* Gestures, calendar agenda and sync feedback. Imported last. */
+/* Gestures, calendar agenda and sync feedback. Imported last. */
 
 html { scroll-behavior: auto; }
 .sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0; }
@@ -103,3 +103,12 @@ button.agenda-row { cursor: pointer; }
 /* Plan blocks on the grid show only the owner's short name; details open on tap. */
 .calendar-block.plan em { font-weight: 800; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .calendar-block.plan { cursor: pointer; }
+
+/* Delete shared data. */
+.danger-zone { margin: 18px 0 8px; padding: 14px; border-radius: 20px; border: 1px solid #ecc9c9; background: #fff8f7; }
+.danger-zone p { margin: 8px 0; font-size: 13.5px; line-height: 1.45; color: #5d4a4a; }
+.danger-zone label { display: block; margin-top: 8px; font-size: 13px; font-weight: 700; color: #5d4a4a; }
+.danger-zone input { margin-top: 6px; padding: 0 12px; border: 1px solid #e3bcbc; border-radius: 12px; background: #fff; font-family: inherit; }
+.danger-zone .text-button.danger { margin: 8px 0 0; }
+.danger-button { padding: 0 18px; border: 0; border-radius: 14px; background: #c0454f; color: #fff; font: inherit; font-weight: 700; cursor: pointer; }
+.danger-button:disabled { opacity: .45; cursor: not-allowed; }

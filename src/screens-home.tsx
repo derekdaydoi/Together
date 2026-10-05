@@ -10,7 +10,7 @@ import { overlapSuggestion, workOccursOn, workOnDate } from './lib/insights'
 import { addDaysISO, localISODate, weekStartISO } from './lib/dates'
 import { blobToDataUrl, compressAvatar } from './lib/image'
 import { isSupabaseConfigured, supabase } from './lib/supabase'
-import { rotateRemoteInvite, saveRemoteProfile } from './lib/remoteStore'
+import { deleteRemoteCoupleData, rotateRemoteInvite, saveRemoteProfile } from './lib/remoteStore'
 import { resetDemoState } from './lib/demoStore'
 import { AccountRecoveryCard } from './screens-account'
 
@@ -223,5 +223,35 @@ const [privacyExpanded,setPrivacyExpanded]=useState(false);const fileRef=useRef<
   {waiting&&!canRotate&&isSupabaseConfigured&&<p>Chỉ chủ sở hữu không gian có thể tạo lại lời mời.</p>}
   {!isSupabaseConfigured&&<p>Đây là bản demo trên thiết bị. Kết nối người thật cần đăng nhập.</p>}
   <p role="status" aria-live="polite">{inviteFeedback}</p>
-</section>{!isSupabaseConfigured&&<button className="text-button danger" onClick={()=>{resetDemoState();localStorage.removeItem('together-onboarded');location.reload()}}><RefreshCcw size={15}/> Reset bản demo</button>}</Page>}
+</section><DeleteCoupleData partnerName={state.partner.displayName} paired={state.partner.id!=='waiting-partner'}/>{!isSupabaseConfigured&&<button className="text-button danger" onClick={()=>{resetDemoState();localStorage.removeItem('together-onboarded');location.reload()}}><RefreshCcw size={15}/> Reset bản demo</button>}</Page>}
+function DeleteCoupleData({partnerName,paired}:{partnerName:string;paired:boolean}){
+  const[expanded,setExpanded]=useState(false),[text,setText]=useState(''),[busy,setBusy]=useState(false),[done,setDone]=useState(false),[error,setError]=useState('')
+  // Accept "XOA" or "XOÁ" so nobody has to type diacritics on a phone keyboard.
+  const confirmed=text.normalize('NFD').replace(/[̀-ͯ]/g,'').trim().toUpperCase()==='XOA'
+  const run=async()=>{
+    if(!confirmed||busy)return
+    setBusy(true);setError('')
+    try{
+      if(isSupabaseConfigured)await deleteRemoteCoupleData()
+      else{resetDemoState();localStorage.removeItem('together-onboarded')}
+      setDone(true)
+      window.setTimeout(()=>location.reload(),1400)
+    }catch{setError('Chưa xoá được. Hãy kiểm tra kết nối rồi thử lại.');setBusy(false)}
+  }
+  return <section className="danger-zone" aria-labelledby="danger-zone-title">
+    <span className="eyebrow" id="danger-zone-title">Vùng nguy hiểm</span>
+    {done?<p role="status">Đã xoá toàn bộ dữ liệu chung. Đang tải lại…</p>:!expanded
+      ?<button type="button" className="text-button danger" onClick={()=>setExpanded(true)}>Xoá toàn bộ dữ liệu chung</button>
+      :<>
+        <p>{paired?`Thao tác này xoá vĩnh viễn lịch làm việc, lịch rảnh, trạng thái, check-in và mọi kế hoạch của cả bạn và ${partnerName}. ${partnerName} cũng sẽ mất dữ liệu ngay lập tức.`:'Thao tác này xoá vĩnh viễn không gian chung và toàn bộ dữ liệu trong đó.'} Không thể hoàn tác. Hồ sơ cá nhân (tên, linh vật, ảnh) vẫn được giữ.</p>
+        <label htmlFor="delete-confirm">Gõ XOA để xác nhận</label>
+        <input id="delete-confirm" value={text} autoComplete="off" autoCapitalize="characters" onChange={e=>setText(e.target.value)} style={{minHeight:44,width:'100%',minWidth:0,fontSize:16}}/>
+        <div style={{display:'flex',flexWrap:'wrap',gap:8,marginTop:8}}>
+          <button type="button" className="secondary-button" style={{minHeight:44}} disabled={busy} onClick={()=>{setExpanded(false);setText('');setError('')}}>Giữ lại</button>
+          <button type="button" className="danger-button" style={{minHeight:44}} disabled={!confirmed||busy} onClick={()=>void run()}>{busy?'Đang xoá…':'Xoá vĩnh viễn'}</button>
+        </div>
+        {error&&<p role="alert">{error}</p>}
+      </>}
+  </section>
+}
 function Feeling({feeling,name,note}:{feeling:1|2|3;name:string;note?:string}){const map={1:['Quá ít','☹'],2:['Vừa đủ','☺'],3:['Quá nhiều','◔']} as const;return <div className={`feeling-badge feeling-${feeling}`}><span>{map[feeling][1]}</span><div><strong>{name}</strong><small>{map[feeling][0]}</small>{note&&<p className="feeling-note">“{note}”</p>}</div></div>}
