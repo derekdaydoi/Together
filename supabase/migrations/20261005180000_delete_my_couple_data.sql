@@ -2,7 +2,7 @@
 -- daily states, work schedules, availability blocks and weekly check-ins.
 -- Shared plans, the partner's data, the couple itself and the profile are untouched.
 -- (Check-ins have no DELETE policy and are locked once revealed, hence a definer function.)
--- NOT yet applied to production: apply once, in order, after review.
+-- ALREADY APPLIED to Supabase production on 2026-10-05 via the SQL Editor; do not reapply manually.
 create or replace function public.delete_my_couple_data()
 returns void
 language plpgsql
