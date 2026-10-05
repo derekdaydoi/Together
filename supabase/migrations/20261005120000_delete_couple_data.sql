@@ -3,7 +3,7 @@
 -- work_schedules, availability_blocks, plans and weekly_checkins.
 -- Profiles (name, zodiac, avatar) belong to each person's own account and are kept,
 -- so both people can start a new space or join another one afterwards.
--- NOT yet applied to production: apply once, in order, after review.
+-- ALREADY APPLIED to Supabase production on 2026-10-05 via the SQL Editor; do not reapply manually.
 create or replace function public.delete_couple_data()
 returns void
 language plpgsql
