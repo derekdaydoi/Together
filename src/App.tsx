@@ -2,7 +2,8 @@ import { useEffect, useRef, useState } from 'react'
 import { Check, CircleAlert } from 'lucide-react'
 import type { View, Tone } from './appTypes'
 import type { CoupleState, SharedPlan } from './types'
-import { BottomNav, BrandMark, Shell, Signature } from './UI'
+import { AccountMenuContext, BottomNav, BrandMark, Shell, Signature } from './UI'
+import { AccountSheet } from './AccountSheet'
 import { PullToRefresh, SwipeBack } from './gestures'
 import { loadDemoState, saveDemoState } from './lib/demoStore'
 import { isSupabaseConfigured, supabase } from './lib/supabase'
@@ -69,6 +70,7 @@ export default function App(){
   const [remoteStatus,setRemoteStatus]=useState<'loading'|'ready'|'error'>(isSupabaseConfigured?'loading':'ready')
   const [remoteError,setRemoteError]=useState<string|null>(null)
   const [remoteRetry,setRemoteRetry]=useState(0)
+  const [accountOpen,setAccountOpen]=useState(false)
 
   useEffect(()=>{if(!isSupabaseConfigured)saveDemoState(state)},[state])
   useEffect(()=>{if(remoteStatus==='ready'&&authUserId)setLoadedFor(authUserId)},[remoteStatus,authUserId])
@@ -325,7 +327,7 @@ export default function App(){
   const onBack=back()
   const isTab=['today','week','plans','us'].includes(view)
   const minimal=['login','profile','connect','daily','work','availability','plan','plan-detail','checkin'].includes(view)
-  return <Shell minimal={minimal}>
+  return <AccountMenuContext.Provider value={()=>setAccountOpen(true)}><Shell minimal={minimal}>
     <SwipeBack key={view} onBack={onBack}><PullToRefresh enabled={isTab} onRefresh={refreshNow}>
     {remoteStatus==='error'&&hasLoaded&&<div className="sync-banner" role="status"><CircleAlert size={16} aria-hidden="true"/><span>Mất kết nối. Đang hiện dữ liệu đã tải.</span><button type="button" onClick={()=>void requestRefreshRef.current?.()}>Thử lại</button></div>}
     {view==='profile'&&<ProfileSetup key={authUserId??'demo'} {...common} onBack={backToOnboarding} onContinue={()=>navigate(state.id?'today':'connect')}/>}
@@ -342,6 +344,7 @@ export default function App(){
     {view==='checkin'&&<CheckinForm {...common} onClose={()=>navigate(previousView)}/>}
     </PullToRefresh></SwipeBack>
     {isTab&&<BottomNav active={view} onChange={v=>setView(v)}/>} 
+    {accountOpen&&<AccountSheet state={state} updateState={updateState} notify={notify} onClose={()=>setAccountOpen(false)}/>}
     {toast&&<div className={`toast ${toast.tone==='success'?'success':''}`}><Check size={16}/>{toast.message}</div>}
-  </Shell>
+  </Shell></AccountMenuContext.Provider>
 }

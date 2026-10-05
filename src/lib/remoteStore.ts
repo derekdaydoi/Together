@@ -200,8 +200,16 @@ export async function rotateRemoteInvite() {
   return { code: row.invite_code as string, expiresAt: row.invite_expires_at as string }
 }
 
-// Erases the whole couple's shared data for both people (server cascades from
-// the couple row). Profiles stay so either person can start over.
+// Erases only the caller's own schedule, status and check-in entries. Shared
+// plans, the partner's data and the connection stay.
+export async function deleteRemoteMyData() {
+  const sb = client()
+  const { error } = await sb.rpc('delete_my_couple_data')
+  if (error) throw error
+}
+
+// Disconnects the couple: erases the whole shared space for both people (server
+// cascades from the couple row). Profiles stay so either person can start over.
 export async function deleteRemoteCoupleData() {
   const sb = client()
   const { error } = await sb.rpc('delete_couple_data')
